@@ -219,11 +219,6 @@ fn build_router(
         async move { auth::basic_auth(user, pass, req, next).await }
     }));
 
-    // Frontend
-    let frontend_routes = Router::new()
-        .route("/", get(frontend::frontend_index))
-        .route("/{*path}", get(frontend::frontend_handler));
-
     Router::new()
         .merge(sab.with_state(state.clone()))
         .merge(servers.with_state(state.clone()))
@@ -232,7 +227,8 @@ fn build_router(
         .merge(logs)
         .merge(ws_route)
         .nest("/dav", dav)
-        .nest("/ui", frontend_routes)
+        .route("/", get(frontend::frontend_index))
+        .fallback(get(frontend::frontend_fallback))
 }
 
 async fn shutdown_signal() {
