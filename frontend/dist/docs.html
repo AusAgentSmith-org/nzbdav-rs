@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nzbdav - Documentation</title>
+<style>
+:root{--bg:#111318;--surface:#1c1f28;--border:#262a36;--text:#d8dce8;--text-dim:#5e6478;--accent:#7c5cfc;--accent-light:#9b82fd;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--blue:#3b82f6}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;font-size:14px}
+.wrap{max-width:860px;margin:0 auto;padding:40px 24px 80px}
+a{color:var(--accent-light);text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:28px;font-weight:700;margin-bottom:8px;letter-spacing:-.5px}
+h1 span{color:var(--accent)}
+.subtitle{color:var(--text-dim);font-size:15px;margin-bottom:40px}
+h2{font-size:18px;font-weight:600;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+h3{font-size:15px;font-weight:600;margin:24px 0 10px;color:var(--accent-light)}
+p{margin-bottom:12px}
+ul,ol{margin:0 0 16px 24px}
+li{margin-bottom:6px}
+code{font-family:'SF Mono','Fira Code',monospace;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 6px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:12px 0 20px;overflow-x:auto;font-size:12px;line-height:1.6}
+pre code{background:none;border:none;padding:0}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;margin-right:4px}
+.tag-get{background:rgba(59,130,246,.15);color:var(--blue)}
+.tag-post{background:rgba(34,197,94,.15);color:var(--green)}
+.tag-put{background:rgba(245,158,11,.15);color:var(--amber)}
+.tag-del{background:rgba(239,68,68,.15);color:var(--red)}
+table{width:100%;border-collapse:collapse;margin:12px 0 20px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);padding:8px 12px;border-bottom:1px solid var(--border)}
+td{padding:8px 12px;font-size:13px;border-bottom:1px solid var(--border)}
+td code{font-size:11px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin:16px 0}
+.note{background:rgba(124,92,252,.06);border:1px solid rgba(124,92,252,.2);border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px}
+.note strong{color:var(--accent-light)}
+.warn{background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px}
+.warn strong{color:var(--amber)}
+.toc{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin:0 0 32px}
+.toc h3{margin:0 0 10px;color:var(--text)}
+.toc ul{margin:0;list-style:none;padding:0}
+.toc li{margin:4px 0}
+.toc a{font-size:13px}
+.back{display:inline-block;margin-bottom:24px;font-size:13px;color:var(--text-dim)}
+.back:hover{color:var(--accent-light)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a class="back" href="/ui">&larr; Back to Dashboard</a>
+
+<h1><span>nzb</span>dav Documentation</h1>
+<p class="subtitle">Usenet virtual filesystem with WebDAV serving &mdash; stream files directly from Usenet without downloading.</p>
+
+<div class="toc">
+<h3>Contents</h3>
+<ul>
+  <li><a href="#overview">Overview</a></li>
+  <li><a href="#quickstart">Quick Start</a></li>
+  <li><a href="#sonarr-radarr">Sonarr / Radarr Integration</a></li>
+  <li><a href="#rclone">Rclone Mount Setup</a></li>
+  <li><a href="#media-players">Media Player Setup</a></li>
+  <li><a href="#webdav">WebDAV Directory Structure</a></li>
+  <li><a href="#sab-api">SABnzbd-Compatible API</a></li>
+  <li><a href="#rest-api">REST API Reference</a></li>
+  <li><a href="#websocket">WebSocket Events</a></li>
+  <li><a href="#strm">STRM Files</a></li>
+  <li><a href="#settings">Settings Reference</a></li>
+  <li><a href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="overview">Overview</h2>
+
+<p>nzbdav accepts NZB files (via API, web UI, or WebDAV upload), processes them to discover contained files (RAR archives, plain files), and serves the content as a virtual WebDAV filesystem. <strong>No file data is stored locally</strong> &mdash; every read streams directly from Usenet on demand.</p>
+
+<h3>How It Works</h3>
+<ol>
+  <li><strong>NZB is added</strong> &mdash; via SABnzbd API, web UI upload, or PUT to <code>/dav/nzbs/</code></li>
+  <li><strong>Pipeline processes</strong> &mdash; fetches first segments to detect file types, parses PAR2 for real filenames, reads RAR headers to discover contained files</li>
+  <li><strong>Virtual files appear</strong> &mdash; in <code>/dav/content/{category}/{job}/</code> as streamable files</li>
+  <li><strong>On-demand streaming</strong> &mdash; when a file is read via WebDAV, articles are fetched from Usenet, decoded, and streamed in real time</li>
+</ol>
+
+<div class="note">
+  <strong>Note:</strong> nzbdav only works with NZBs containing <strong>store-compressed (m0)</strong> RAR archives or plain files. Compressed RARs are not supported because decompression would require downloading the entire archive first.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quickstart">Quick Start</h2>
+
+<h3>1. Add a Usenet Server</h3>
+<p>Go to <a href="/ui">Dashboard</a> &rarr; <strong>Servers</strong> &rarr; <strong>Add Server</strong>. Enter your provider details (host, port, SSL, credentials, connections).</p>
+
+<h3>2. Configure Settings</h3>
+<p>Go to <strong>Settings</strong> and set your categories (e.g. <code>tv, movies, music</code>).</p>
+
+<h3>3. Add an NZB</h3>
+<p>Either:</p>
+<ul>
+  <li>Use the <strong>Upload NZB</strong> tab in the web UI</li>
+  <li>Configure Sonarr/Radarr to use nzbdav as a download client (see below)</li>
+  <li>Use the API: <code>POST /api?mode=addfile</code> or <code>GET /api?mode=addurl&name=URL</code></li>
+  <li>PUT an NZB file to <code>/dav/nzbs/</code> via any WebDAV client</li>
+</ul>
+
+<h3>4. Access Files</h3>
+<p>Once processed, files appear in <code>/dav/content/{category}/{job}/</code>. Mount via rclone or access directly through any WebDAV client.</p>
+
+<!-- ============================================================ -->
+<h2 id="sonarr-radarr">Sonarr / Radarr Integration</h2>
+
+<p>nzbdav exposes a SABnzbd-compatible API, so Sonarr and Radarr can use it as a download client.</p>
+
+<h3>Step 1: Add Download Client in Sonarr/Radarr</h3>
+<ol>
+  <li>Go to <strong>Settings &rarr; Download Clients &rarr; Add</strong></li>
+  <li>Select <strong>SABnzbd</strong></li>
+  <li>Configure:
+    <table>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td>Name</td><td><code>nzbdav</code></td></tr>
+      <tr><td>Host</td><td>Your nzbdav host (e.g. <code>192.168.1.100</code>)</td></tr>
+      <tr><td>Port</td><td><code>8080</code> (or your configured port)</td></tr>
+      <tr><td>API Key</td><td>Your API key (if configured with <code>--api-key</code>)</td></tr>
+      <tr><td>Category</td><td><code>tv</code> for Sonarr, <code>movies</code> for Radarr</td></tr>
+      <tr><td>Use SSL</td><td>No (unless you have a reverse proxy with TLS)</td></tr>
+    </table>
+  </li>
+  <li>Click <strong>Test</strong> to verify connectivity</li>
+</ol>
+
+<h3>Step 2: Mount WebDAV with rclone</h3>
+<p>Sonarr/Radarr need to see the processed files on the local filesystem. Use rclone to mount the WebDAV:</p>
+<pre><code># Create rclone remote (one-time)
+rclone config create nzbdav webdav \
+  url=http://localhost:8080/dav \
+  vendor=other
+
+# Mount (add to systemd/cron for persistence)
+rclone mount nzbdav: /mnt/nzbdav \
+  --dir-cache-time 5s \
+  --vfs-cache-mode off \
+  --allow-other \
+  --daemon</code></pre>
+
+<h3>Step 3: Configure Remote Path Mapping</h3>
+<p>In Sonarr/Radarr, add a <strong>Remote Path Mapping</strong>:</p>
+<table>
+  <tr><th>Field</th><th>Value</th></tr>
+  <tr><td>Host</td><td>Your nzbdav host</td></tr>
+  <tr><td>Remote Path</td><td><code>/content/</code></td></tr>
+  <tr><td>Local Path</td><td><code>/mnt/nzbdav/content/</code></td></tr>
+</table>
+
+<div class="note">
+  <strong>How it works:</strong> When an NZB finishes processing, nzbdav reports the completed path (e.g. <code>/content/tv/Show.S01E01/</code>) to Sonarr via the SAB API. Sonarr uses the remote path mapping to translate this to <code>/mnt/nzbdav/content/tv/Show.S01E01/</code>, where it can see the files via the rclone mount.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rclone">Rclone Mount Setup</h2>
+
+<h3>Basic Mount</h3>
+<pre><code>rclone mount nzbdav: /mnt/nzbdav \
+  --dir-cache-time 5s \
+  --vfs-cache-mode off \
+  --allow-other</code></pre>
+
+<h3>Recommended Flags</h3>
+<table>
+  <tr><th>Flag</th><th>Purpose</th></tr>
+  <tr><td><code>--dir-cache-time 5s</code></td><td>Short cache so new files appear quickly</td></tr>
+  <tr><td><code>--vfs-cache-mode off</code></td><td>No local caching &mdash; stream directly</td></tr>
+  <tr><td><code>--allow-other</code></td><td>Allow other users (e.g. Plex) to access the mount</td></tr>
+  <tr><td><code>--buffer-size 64M</code></td><td>Larger read-ahead buffer for smoother playback</td></tr>
+  <tr><td><code>--vfs-read-chunk-size 32M</code></td><td>Read in larger chunks</td></tr>
+</table>
+
+<h3>Systemd Service</h3>
+<pre><code># /etc/systemd/system/nzbdav-mount.service
+[Unit]
+Description=nzbdav rclone mount
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/rclone mount nzbdav: /mnt/nzbdav \
+  --dir-cache-time 5s \
+  --vfs-cache-mode off \
+  --allow-other
+ExecStop=/bin/fusermount -uz /mnt/nzbdav
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="media-players">Media Player Setup</h2>
+
+<h3>Plex / Emby / Jellyfin</h3>
+<p>Point your media library at the rclone mount path (e.g. <code>/mnt/nzbdav/content/tv/</code>). The media server will scan the directory and find video files that stream on demand from Usenet.</p>
+
+<h3>Direct WebDAV Access</h3>
+<p>Some players (VLC, Kodi, Infuse) can open WebDAV URLs directly:</p>
+<pre><code>http://nzbdav-host:8080/dav/content/movies/Movie.2024/movie.mkv</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="webdav">WebDAV Directory Structure</h2>
+
+<table>
+  <tr><th>Path</th><th>Description</th></tr>
+  <tr><td><code>/</code></td><td>Virtual filesystem root</td></tr>
+  <tr><td><code>/content/</code></td><td>Processed files, organized by category and job name. Streamable from Usenet.</td></tr>
+  <tr><td><code>/content/{category}/</code></td><td>Category directory (e.g. tv, movies)</td></tr>
+  <tr><td><code>/content/{category}/{job}/</code></td><td>Job directory with extracted files</td></tr>
+  <tr><td><code>/nzbs/</code></td><td>Queue mirror. Lists current queue items as NZB files. Upload to add, delete to remove.</td></tr>
+  <tr><td><code>/.ids/</code></td><td>ID-based file access by UUID</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sab-api">SABnzbd-Compatible API</h2>
+
+<p>All requests go to <code>/api</code> with a <code>mode</code> query parameter. Responses are JSON.</p>
+
+<table>
+  <tr><th>Mode</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>addfile</code></td><td><span class="tag tag-post">POST</span></td><td>Upload NZB via multipart form (field: <code>nzbfile</code>)</td></tr>
+  <tr><td><code>addurl</code></td><td><span class="tag tag-get">GET</span></td><td>Add NZB from URL (<code>&name=URL</code>)</td></tr>
+  <tr><td><code>queue</code></td><td><span class="tag tag-get">GET</span></td><td>List queue. Use <code>&name=delete&value={nzo_id}</code> to remove.</td></tr>
+  <tr><td><code>history</code></td><td><span class="tag tag-get">GET</span></td><td>List history with <code>&start=0&limit=50</code>. Use <code>&name=delete&value={nzo_id}</code> to remove.</td></tr>
+  <tr><td><code>version</code></td><td><span class="tag tag-get">GET</span></td><td>Returns <code>{"version": "0.1.0"}</code></td></tr>
+  <tr><td><code>status</code></td><td><span class="tag tag-get">GET</span></td><td>Returns status, version, paused state</td></tr>
+  <tr><td><code>get_cats</code></td><td><span class="tag tag-get">GET</span></td><td>Returns configured categories</td></tr>
+  <tr><td><code>get_config</code></td><td><span class="tag tag-get">GET</span></td><td>Returns configuration object</td></tr>
+</table>
+
+<h3>Example: Upload NZB</h3>
+<pre><code>curl -X POST "http://localhost:8080/api?mode=addfile&cat=tv" \
+  -F "nzbfile=@Movie.2024.nzb"</code></pre>
+
+<h3>Example: Add from URL</h3>
+<pre><code>curl "http://localhost:8080/api?mode=addurl&name=https://example.com/file.nzb&cat=movies"</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="rest-api">REST API Reference</h2>
+
+<p>In addition to the SABnzbd-compatible API, nzbdav has a REST API for server and settings management. Full interactive docs available at <a href="/ui/swagger.html">Swagger UI</a>.</p>
+
+<h3>Server Management</h3>
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>/api/servers</code></td><td><span class="tag tag-get">GET</span></td><td>List all Usenet servers</td></tr>
+  <tr><td><code>/api/servers</code></td><td><span class="tag tag-post">POST</span></td><td>Add a server (JSON body)</td></tr>
+  <tr><td><code>/api/servers/{id}</code></td><td><span class="tag tag-put">PUT</span></td><td>Update a server</td></tr>
+  <tr><td><code>/api/servers/{id}</code></td><td><span class="tag tag-del">DELETE</span></td><td>Remove a server</td></tr>
+  <tr><td><code>/api/servers/{id}/test</code></td><td><span class="tag tag-post">POST</span></td><td>Test server connectivity</td></tr>
+</table>
+
+<h3>Settings</h3>
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>/api/settings</code></td><td><span class="tag tag-get">GET</span></td><td>Get all settings</td></tr>
+  <tr><td><code>/api/settings</code></td><td><span class="tag tag-put">PUT</span></td><td>Update settings (JSON body)</td></tr>
+  <tr><td><code>/api/backup</code></td><td><span class="tag tag-get">GET</span></td><td>Download database backup</td></tr>
+  <tr><td><code>/api/logs</code></td><td><span class="tag tag-get">GET</span></td><td>Get recent log lines</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="websocket">WebSocket Events</h2>
+
+<p>Connect to <code>ws://host:port/ws</code> for real-time updates. Events are JSON with a <code>type</code> field:</p>
+
+<pre><code>// Queue status change
+{"type": "Queue", "queue_count": 3, "is_processing": true, "current_job": "Movie.2024"}
+
+// History update
+{"type": "History", "total_count": 47}
+
+// Log line
+{"type": "Log", "level": "INFO", "target": "queue_manager", "message": "processed successfully", "timestamp": "14:32:01"}</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="strm">STRM Files</h2>
+
+<p>STRM files are simple text files containing a URL. Media servers (Plex, Emby, Jellyfin) can play them by fetching the URL. nzbdav can optionally generate STRM files for each video in processed content.</p>
+
+<h3>Setup</h3>
+<ol>
+  <li>Go to <strong>Settings</strong></li>
+  <li>Set <strong>STRM Base URL</strong> to your nzbdav WebDAV URL (e.g. <code>http://192.168.1.100:8080/dav</code>)</li>
+  <li>New NZBs will generate <code>.strm</code> files alongside video files in <code>/content/</code></li>
+</ol>
+
+<p>STRM file content example:</p>
+<pre><code>http://192.168.1.100:8080/dav/content/tv/Show.S01E01/episode.mkv</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="settings">Settings Reference</h2>
+
+<table>
+  <tr><th>Setting</th><th>Default</th><th>Description</th></tr>
+  <tr><td>Categories</td><td><em>empty</em></td><td>Comma-separated list (e.g. <code>tv, movies, music</code>). Shown in upload form and reported to Sonarr/Radarr.</td></tr>
+  <tr><td>File Blocklist</td><td><em>empty</em></td><td>Glob patterns for files to skip (e.g. <code>*.nfo, *.txt, *.jpg</code>)</td></tr>
+  <tr><td>Ensure Video</td><td><code>true</code></td><td>Fail NZBs that contain no video files</td></tr>
+  <tr><td>Duplicate NZB</td><td><code>increment</code></td><td>What to do when the same NZB is added again: <code>increment</code> (rename), <code>reject</code>, or <code>replace</code></td></tr>
+  <tr><td>WebDAV Read-Only</td><td><code>false</code></td><td>When enabled, prevents deletion of files from <code>/content/</code></td></tr>
+  <tr><td>STRM Base URL</td><td><em>empty</em></td><td>Base URL for generated STRM files. Leave empty to disable STRM generation.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3>NZBs stuck in "Processing"</h3>
+<ul>
+  <li>Check the <strong>Logs</strong> tab for errors</li>
+  <li>Verify your Usenet server is configured and test connectivity</li>
+  <li>Ensure the NZB contains store-compressed (m0) RAR files, not compressed</li>
+</ul>
+
+<h3>NZBs going straight to "Failed"</h3>
+<ul>
+  <li>Check logs for <code>NZB blob not found</code> &mdash; this was a known bug (fixed in current version)</li>
+  <li>Check for <code>UnsupportedCompressionMethod</code> &mdash; the NZB contains compressed RARs</li>
+  <li>Check for <code>ArticleNotFound</code> &mdash; the Usenet articles have been DMCA'd or retention has expired</li>
+</ul>
+
+<h3>Files not appearing in /content/</h3>
+<ul>
+  <li>Check queue and history &mdash; if the NZB completed, files should be in <code>/content/{category}/{job}/</code></li>
+  <li>If using rclone mount, try <code>ls /mnt/nzbdav/content/</code> to refresh the cache</li>
+</ul>
+
+<h3>Playback buffering or failing</h3>
+<ul>
+  <li>Increase Usenet server connections (Servers &rarr; Edit &rarr; Connections)</li>
+  <li>If using rclone, increase <code>--buffer-size</code> and <code>--vfs-read-chunk-size</code></li>
+  <li>Check that your Usenet provider has sufficient bandwidth and retention</li>
+</ul>
+
+<h3>Pool timeout errors</h3>
+<ul>
+  <li>This means all connection slots are busy. Increase the connection count in server settings.</li>
+  <li>If you have very few connections (1-2), processing will be slower but should still work.</li>
+</ul>
+
+<div class="card" style="margin-top:40px;text-align:center">
+  <p style="color:var(--text-dim);font-size:13px">
+    <a href="/ui">Dashboard</a> &middot;
+    <a href="/ui/swagger.html">API Docs (Swagger)</a> &middot;
+    <a href="/ui/openapi.json">OpenAPI Spec</a>
+  </p>
+</div>
+
+</div>
+</body>
+</html>

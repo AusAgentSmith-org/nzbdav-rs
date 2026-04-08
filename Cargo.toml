@@ -1,0 +1,83 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/nzbdav-core",
+    "crates/nzbdav-dav",
+    "crates/nzbdav-stream",
+    "crates/nzbdav-rar",
+    "crates/nzbdav-pipeline",
+    "crates/nzbdav-arr",
+    "crates/nzbdav-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.lints.rust]
+unused = "warn"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+# Web
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "normalize-path"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+# TLS
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.26"
+# HTTP
+http = "1"
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+# Data
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+bytes = "1"
+# Decode
+crc32fast = "1"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry"] }
+# Error handling
+thiserror = "2"
+anyhow = "1"
+# Util
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+arc-swap = "1"
+base64 = "0.22"
+hex = "0.4"
+md-5 = "0.10"
+# XML
+quick-xml = "0.37"
+regex = "1"
+glob = "0.3"
+aes = "0.8"
+cbc = "0.1"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
+
+# Shared NZB crates (published on crates.io)
+nzb-nntp = "0.2.3"
+nzb-core = "0.2.2"
+nzb-decode = "0.1.1"
+rust-par2 = "0.1.2"
+
+# Workspace crates
+nzbdav-core = { path = "crates/nzbdav-core" }
+nzbdav-dav = { path = "crates/nzbdav-dav" }
+nzbdav-stream = { path = "crates/nzbdav-stream" }
+nzbdav-rar = { path = "crates/nzbdav-rar" }
+nzbdav-pipeline = { path = "crates/nzbdav-pipeline" }
+nzbdav-arr = { path = "crates/nzbdav-arr" }
