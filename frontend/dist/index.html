@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nzbdav</title>
+<style>
+:root {
+  --bg: #111318;
+  --sidebar: #16181f;
+  --surface: #1c1f28;
+  --border: #262a36;
+  --text: #d8dce8;
+  --text-dim: #5e6478;
+  --accent: #7c5cfc;
+  --accent-light: #9b82fd;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --blue: #3b82f6;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:13px}
+
+/* Sidebar */
+aside{width:220px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.logo{padding:20px 20px 24px;font-size:20px;font-weight:700;letter-spacing:-.5px}
+.logo span{color:var(--accent)}
+.nav-group{padding:0 12px}
+.nav-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);padding:8px 12px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:6px;font-size:13px;color:var(--text-dim);cursor:pointer;transition:all .1s;margin-bottom:2px;user-select:none}
+.nav-item:hover{background:rgba(124,92,252,.08);color:var(--text)}
+.nav-item.active{background:rgba(124,92,252,.12);color:var(--accent-light)}
+.nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+.nav-badge{margin-left:auto;font-size:11px;background:var(--accent);color:#fff;padding:1px 7px;border-radius:100px;min-width:20px;text-align:center}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
+.sidebar-footer .version{font-size:11px;color:var(--text-dim)}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px}
+.dot-green{background:var(--green)}
+.dot-amber{background:var(--amber)}
+.dot-red{background:var(--red)}
+
+/* SVG icons inline */
+.icon-svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);flex-shrink:0}
+.topbar h1{font-size:16px;font-weight:600}
+.content{padding:24px 28px;overflow-y:auto;flex:1}
+
+/* Grid metrics */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px}
+.metric .label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);margin-bottom:6px}
+.metric .val{font-size:28px;font-weight:700}
+.metric .sub{font-size:12px;color:var(--text-dim);margin-top:2px}
+
+/* Panel / table card */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
+.panel-head h2{font-size:13px;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);padding:8px 20px;border-bottom:1px solid var(--border)}
+td{padding:11px 20px;font-size:13px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(124,92,252,.03)}
+.mono{font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:var(--text-dim)}
+
+/* Tags */
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500}
+.tag-ok{background:rgba(34,197,94,.12);color:var(--green)}
+.tag-fail{background:rgba(239,68,68,.12);color:var(--red)}
+.tag-proc{background:rgba(245,158,11,.12);color:var(--amber)}
+.tag-queue{background:rgba(59,130,246,.12);color:var(--blue)}
+
+/* Buttons */
+.btn{font-size:12px;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-family:inherit;transition:all .1s}
+.btn:hover{border-color:var(--accent)}
+.btn-sm{font-size:11px;padding:4px 10px}
+.btn-accent{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-accent:hover{background:var(--accent-light);border-color:var(--accent-light)}
+.btn-danger{color:var(--red);border-color:transparent}
+.btn-danger:hover{border-color:var(--red);background:rgba(239,68,68,.06)}
+
+/* Upload zone */
+.drop-zone{border:2px dashed var(--border);border-radius:10px;padding:56px 24px;text-align:center;cursor:pointer;transition:all .15s}
+.drop-zone:hover,.drop-zone.dragover{border-color:var(--accent);background:rgba(124,92,252,.04)}
+.drop-zone .dz-icon{font-size:36px;margin-bottom:8px;color:var(--text-dim)}
+.drop-zone p{color:var(--text-dim);font-size:13px}
+
+/* Form elements */
+.form-group{margin-bottom:16px}
+.form-label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);display:block;margin-bottom:4px}
+.form-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:12px;width:100%;font-family:inherit}
+.form-input:focus{outline:none;border-color:var(--accent)}
+.form-input[readonly]{color:var(--text-dim);cursor:default;border-color:transparent;background:transparent}
+select.form-input{cursor:pointer}
+
+/* Breadcrumb */
+.breadcrumb{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-dim);margin-bottom:16px}
+.breadcrumb a{color:var(--accent);cursor:pointer;text-decoration:none}
+.breadcrumb a:hover{text-decoration:underline}
+
+/* Empty state */
+.empty{text-align:center;padding:48px 24px;color:var(--text-dim)}
+.empty p{margin-top:8px;font-size:13px}
+
+/* Toast */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.toast{padding:10px 16px;border-radius:8px;font-size:12px;animation:slideIn .2s;max-width:360px}
+.toast-ok{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--green)}
+.toast-err{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* File link */
+.file-link{color:var(--accent);cursor:pointer;text-decoration:none}
+.file-link:hover{text-decoration:underline}
+.dir-link{color:var(--accent-light);cursor:pointer}
+.dir-link:hover{text-decoration:underline}
+
+/* Sections */
+.section{display:none}
+.section.visible{display:block}
+
+/* Responsive */
+@media(max-width:768px){
+  aside{width:56px}
+  .logo,.nav-label,.nav-item span:not(.nav-icon),.nav-badge,.sidebar-footer .version{display:none}
+  .nav-item{justify-content:center;padding:12px}
+  .nav-icon{width:auto;font-size:16px}
+  .grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="logo"><span>nzb</span>dav</div>
+  <div class="nav-group">
+    <div class="nav-label">Monitor</div>
+    <a class="nav-item active" data-tab="queue">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>Queue</span>
+      <span class="nav-badge" id="queue-badge">0</span>
+    </a>
+    <a class="nav-item" data-tab="history">
+      <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span>History</span>
+    </a>
+    <a class="nav-item" data-tab="files">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+      <span>Files</span>
+    </a>
+  </div>
+  <div class="nav-group" style="margin-top:16px">
+    <div class="nav-label">Actions</div>
+    <a class="nav-item" data-tab="upload">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      <span>Upload NZB</span>
+    </a>
+  </div>
+  <div class="nav-group" style="margin-top:16px">
+    <div class="nav-label">System</div>
+    <a class="nav-item" data-tab="servers">
+      <svg class="icon-svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+      <span>Servers</span>
+    </a>
+    <a class="nav-item" data-tab="logs">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+      <span>Logs</span>
+    </a>
+    <a class="nav-item" href="/ui/docs.html" target="_blank" style="text-decoration:none">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+      <span>Docs</span>
+    </a>
+    <a class="nav-item" href="/ui/swagger.html" target="_blank" style="text-decoration:none">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></svg>
+      <span>API Spec</span>
+    </a>
+    <a class="nav-item" data-tab="settings">
+      <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span>Settings</span>
+    </a>
+  </div>
+  <div class="sidebar-footer">
+    <div class="version"><span class="status-dot dot-green" id="ws-dot"></span><span id="status-text">Connecting...</span></div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="page-title">Queue</h1>
+    <button class="btn btn-accent" id="topbar-upload-btn">Upload NZB</button>
+  </div>
+
+  <div class="content">
+    <!-- QUEUE -->
+    <div id="queue" class="section visible">
+      <div class="grid">
+        <div class="metric"><div class="label">In Queue</div><div class="val" id="m-queue">0</div><div class="sub" id="m-queue-sub">-</div></div>
+        <div class="metric"><div class="label">Total Completed</div><div class="val" style="color:var(--green)" id="m-completed">0</div></div>
+        <div class="metric"><div class="label">Total Failed</div><div class="val" style="color:var(--red)" id="m-failed">0</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Active Queue</h2><span class="mono" id="queue-total"></span></div>
+        <table>
+          <thead><tr><th>Name</th><th>Category</th><th>Size</th><th>Priority</th><th>Status</th><th style="width:80px"></th></tr></thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+        <div id="queue-empty" class="empty" style="display:none"><p>Queue is empty</p></div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <div id="history" class="section">
+      <div class="panel">
+        <div class="panel-head"><h2>History</h2><span class="mono" id="history-count"></span></div>
+        <table>
+          <thead><tr><th>Name</th><th>Category</th><th>Size</th><th>Status</th><th>Completed</th><th style="width:80px"></th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+        <div id="history-empty" class="empty" style="display:none"><p>No history yet</p></div>
+      </div>
+    </div>
+
+    <!-- FILES -->
+    <div id="files" class="section">
+      <div id="files-breadcrumb" class="breadcrumb"></div>
+      <div class="panel">
+        <div class="panel-head"><h2>Virtual Filesystem</h2></div>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Size</th></tr></thead>
+          <tbody id="files-body"></tbody>
+        </table>
+        <div id="files-empty" class="empty" style="display:none"><p>Empty directory</p></div>
+      </div>
+    </div>
+
+    <!-- UPLOAD -->
+    <div id="upload" class="section">
+      <div class="panel" style="padding:24px">
+        <div class="drop-zone" id="drop-zone">
+          <div class="dz-icon">+</div>
+          <p>Drop NZB files here or click to browse</p>
+        </div>
+        <input type="file" id="file-input" accept=".nzb" multiple hidden>
+        <div id="upload-list" style="margin-top:16px"></div>
+        <div style="display:flex;gap:16px;align-items:flex-end;margin-top:20px">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Category</label>
+            <select class="form-input" id="upload-cat" style="width:140px"></select>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Priority</label>
+            <select class="form-input" id="upload-priority" style="width:120px">
+              <option value="-1">Low</option>
+              <option value="0" selected>Normal</option>
+              <option value="1">High</option>
+              <option value="2">Force</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVERS -->
+    <div id="servers" class="section">
+      <div class="panel">
+        <div class="panel-head"><h2>Usenet Servers</h2><button class="btn btn-accent btn-sm" onclick="showAddServer()">Add Server</button></div>
+        <table>
+          <thead><tr><th>Name</th><th>Host</th><th>Port</th><th>Conns</th><th>SSL</th><th>Priority</th><th>Enabled</th><th style="width:160px"></th></tr></thead>
+          <tbody id="servers-body"></tbody>
+        </table>
+        <div id="servers-empty" class="empty" style="display:none"><p>No servers configured. Add a Usenet server to get started.</p></div>
+      </div>
+
+      <!-- Add/Edit form (hidden by default) -->
+      <div class="panel" id="server-form-panel" style="padding:24px;display:none">
+        <h2 style="font-size:14px;margin-bottom:20px" id="server-form-title">Add Server</h2>
+        <input type="hidden" id="sf-id">
+        <div style="display:grid;grid-template-columns:140px 1fr;gap:12px 20px;align-items:center;max-width:500px">
+          <label class="form-label" style="margin:0">Name</label>
+          <input class="form-input" id="sf-name" placeholder="My Server">
+          <label class="form-label" style="margin:0">Host</label>
+          <input class="form-input" id="sf-host" placeholder="news.example.com">
+          <label class="form-label" style="margin:0">Port</label>
+          <input class="form-input" id="sf-port" type="number" value="563" style="width:100px">
+          <label class="form-label" style="margin:0">Username</label>
+          <input class="form-input" id="sf-user" placeholder="(optional)">
+          <label class="form-label" style="margin:0">Password</label>
+          <input class="form-input" id="sf-pass" type="password" placeholder="(optional)">
+          <label class="form-label" style="margin:0">Connections</label>
+          <input class="form-input" id="sf-conns" type="number" value="8" style="width:100px">
+          <label class="form-label" style="margin:0">Priority</label>
+          <input class="form-input" id="sf-priority" type="number" value="0" style="width:100px" title="0 = highest">
+          <label class="form-label" style="margin:0">SSL</label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="sf-ssl" checked> Use TLS</label>
+          <label class="form-label" style="margin:0">Enabled</label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="sf-enabled" checked> Active</label>
+          <label class="form-label" style="margin:0">Retention</label>
+          <input class="form-input" id="sf-retention" type="number" value="0" style="width:100px" title="Days, 0 = unlimited">
+        </div>
+        <div style="margin-top:20px;display:flex;gap:10px">
+          <button class="btn btn-accent" onclick="saveServer()">Save</button>
+          <button class="btn" onclick="hideServerForm()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div id="logs" class="section">
+      <div class="panel" style="display:flex;flex-direction:column;height:calc(100vh - 130px)">
+        <div class="panel-head" style="flex-shrink:0">
+          <h2>Application Logs</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="font-size:11px;color:var(--text-dim)">Filter:</label>
+            <select class="form-input" id="log-filter" style="width:100px;padding:4px 8px" onchange="renderLogLines()">
+              <option value="all">All</option>
+              <option value="ERROR">Error</option>
+              <option value="WARN">Warn</option>
+              <option value="INFO">Info</option>
+            </select>
+            <button class="btn btn-sm" onclick="clearLogs()">Clear</button>
+            <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
+              <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+            </label>
+          </div>
+        </div>
+        <div id="log-output" style="flex:1;overflow-y:auto;padding:8px 12px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;line-height:1.7;background:var(--bg)"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="settings" class="section">
+      <div class="panel" style="padding:24px">
+        <h2 style="font-size:14px;margin-bottom:20px">Application Settings</h2>
+        <div style="display:grid;grid-template-columns:200px 1fr;gap:14px 24px;align-items:center;max-width:600px">
+          <label class="form-label" style="margin:0">Categories</label>
+          <input class="form-input" type="text" id="cfg-categories" placeholder="tv, movies, music">
+
+          <label class="form-label" style="margin:0">File Blocklist</label>
+          <input class="form-input" type="text" id="cfg-blocklist" placeholder="*.nfo, *.txt, *.jpg">
+
+          <label class="form-label" style="margin:0">Ensure Video</label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-ensure-video"> Require at least one video file per NZB</label>
+
+          <label class="form-label" style="margin:0">Duplicate NZB</label>
+          <select class="form-input" id="cfg-duplicate" style="width:200px">
+            <option value="increment">Increment name</option>
+            <option value="reject">Reject</option>
+            <option value="replace">Replace</option>
+          </select>
+
+          <label class="form-label" style="margin:0">WebDAV Read-Only</label>
+          <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="cfg-readonly"> Enforce read-only content directory</label>
+
+          <label class="form-label" style="margin:0">STRM Base URL</label>
+          <input class="form-input" type="text" id="cfg-strm-url" placeholder="http://nzbdav:8080/dav">
+
+          <label class="form-label" style="margin:0">Max Concurrent Queue</label>
+          <input class="form-input" type="number" id="cfg-max-concurrent" min="1" max="10" value="2" style="width:100px" title="Number of NZBs to process concurrently (requires restart)">
+        </div>
+        <div style="margin-top:20px;display:flex;gap:10px">
+          <button class="btn btn-accent" onclick="saveSettings()">Save Settings</button>
+          <button class="btn" onclick="loadSettingsPage()">Reset</button>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:24px;margin-top:16px">
+        <h2 style="font-size:14px;margin-bottom:20px">System Info</h2>
+        <div style="display:grid;grid-template-columns:200px 1fr;gap:14px 24px;align-items:center;max-width:600px">
+          <label class="form-label" style="margin:0">Version</label>
+          <input class="form-input" type="text" id="cfg-version" readonly>
+          <label class="form-label" style="margin:0">WebDAV URL</label>
+          <input class="form-input" type="text" id="cfg-davurl" readonly>
+          <label class="form-label" style="margin:0">API Endpoint</label>
+          <input class="form-input" type="text" id="cfg-apiurl" readonly>
+          <label class="form-label" style="margin:0">WebSocket</label>
+          <span id="cfg-ws">-</span>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:24px;margin-top:16px">
+        <h2 style="font-size:14px;margin-bottom:20px">Maintenance</h2>
+        <div style="display:flex;gap:10px">
+          <button class="btn" onclick="downloadBackup()">Download Database Backup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// --- Config ---
+const API = '/api';
+const DAV = '/dav';
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+
+// --- State ---
+let currentTab = 'queue';
+let filesPath = '/';
+let ws = null;
+let apiKey = '';
+
+// --- Helpers ---
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+function formatBytes(b) {
+  if (b == null || b === 0) return '-';
+  const u = ['B','KB','MB','GB','TB'];
+  const i = Math.floor(Math.log(Math.abs(b)) / Math.log(1024));
+  return (b / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + u[i];
+}
+
+function timeAgo(ts) {
+  const d = Math.floor((Date.now() / 1000) - ts);
+  if (d < 60) return 'just now';
+  if (d < 3600) return Math.floor(d / 60) + 'm ago';
+  if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+  return Math.floor(d / 86400) + 'd ago';
+}
+
+function toast(msg, ok = true) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+  t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function api(mode, extra = {}) {
+  const p = new URLSearchParams({ mode, output: 'json', ...extra });
+  if (apiKey) p.set('apikey', apiKey);
+  const r = await fetch(API + '?' + p);
+  return r.json();
+}
+
+// --- Tab navigation ---
+function switchTab(tab) {
+  currentTab = tab;
+  $$('.section').forEach(s => s.classList.remove('visible'));
+  const el = document.getElementById(tab);
+  if (el) el.classList.add('visible');
+  $$('.nav-item').forEach(a => a.classList.remove('active'));
+  const navEl = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  if (navEl) navEl.classList.add('active');
+  const titles = { queue:'Queue', history:'History', files:'Files', upload:'Upload NZB', servers:'Servers', logs:'Logs', settings:'Settings' };
+  $('#page-title').textContent = titles[tab] || tab;
+  // Refresh on tab switch
+  if (tab === 'queue') loadQueue();
+  if (tab === 'history') loadHistory();
+  if (tab === 'files') loadFiles(filesPath);
+  if (tab === 'servers') loadServers();
+  if (tab === 'logs') loadLogs();
+  if (tab === 'settings') loadSettings();
+}
+
+$$('.nav-item[data-tab]').forEach(el => {
+  el.addEventListener('click', () => switchTab(el.dataset.tab));
+});
+$('#topbar-upload-btn').addEventListener('click', () => switchTab('upload'));
+
+// --- Queue ---
+async function loadQueue() {
+  try {
+    const data = await api('queue');
+    const q = data.queue;
+    const tbody = $('#queue-body');
+    const empty = $('#queue-empty');
+    tbody.innerHTML = '';
+    $('#m-queue').textContent = q.noofslots_total;
+    const proc = q.slots.filter(s => s.status === 'Processing' || s.status === 'Downloading').length;
+    $('#m-queue-sub').textContent = proc > 0 ? proc + ' processing' : 'idle';
+    $('#queue-badge').textContent = q.noofslots_total;
+    $('#queue-total').textContent = q.noofslots_total > 0 ? q.noofslots + ' of ' + q.noofslots_total : '';
+    if (q.slots.length === 0) {
+      empty.style.display = '';
+      tbody.parentElement.querySelector('thead').style.display = 'none';
+    } else {
+      empty.style.display = 'none';
+      tbody.parentElement.querySelector('thead').style.display = '';
+      q.slots.forEach(s => {
+        const tag = s.status === 'Queued' ? 'tag-queue' : 'tag-proc';
+        tbody.innerHTML += `<tr>
+          <td>${esc(s.filename)}</td>
+          <td class="mono">${esc(s.cat)}</td>
+          <td class="mono">${s.mb} MB</td>
+          <td>${esc(s.priority)}</td>
+          <td><span class="tag ${tag}">${esc(s.status)}</span></td>
+          <td><button class="btn btn-sm btn-danger" onclick="removeQueue('${s.nzo_id}')">Remove</button></td>
+        </tr>`;
+      });
+    }
+    // Also update history counts
+    const hData = await api('history', { limit: 0 });
+    const total = hData.history.noofslots;
+    $('#m-completed').textContent = total;
+  } catch (e) {
+    console.error('loadQueue', e);
+  }
+}
+
+async function removeQueue(id) {
+  await api('queue', { name: 'delete', value: id });
+  toast('Removed from queue');
+  loadQueue();
+}
+
+// --- History ---
+async function loadHistory() {
+  try {
+    const data = await api('history', { start: 0, limit: 50 });
+    const h = data.history;
+    const tbody = $('#history-body');
+    const empty = $('#history-empty');
+    $('#history-count').textContent = h.noofslots + ' total';
+    tbody.innerHTML = '';
+    let failed = 0;
+    if (h.slots.length === 0) {
+      empty.style.display = '';
+      tbody.parentElement.querySelector('thead').style.display = 'none';
+    } else {
+      empty.style.display = 'none';
+      tbody.parentElement.querySelector('thead').style.display = '';
+      h.slots.forEach(s => {
+        if (s.status === 'Failed') failed++;
+        const tag = s.status === 'Completed' ? 'tag-ok' : 'tag-fail';
+        const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="retryHistory('${s.nzo_id}')">Retry</button> ` : '';
+        tbody.innerHTML += `<tr>
+          <td>${esc(s.name)}</td>
+          <td class="mono">${esc(s.category)}</td>
+          <td class="mono">${formatBytes(s.bytes)}</td>
+          <td><span class="tag ${tag}">${esc(s.status)}</span></td>
+          <td class="mono">${timeAgo(s.completed)}</td>
+          <td>${retryBtn}<button class="btn btn-sm btn-danger" onclick="removeHistory('${s.nzo_id}')">Delete</button></td>
+        </tr>`;
+      });
+    }
+    $('#m-failed').textContent = failed;
+  } catch (e) {
+    console.error('loadHistory', e);
+  }
+}
+
+async function removeHistory(id) {
+  await api('history', { name: 'delete', value: id });
+  toast('Removed from history');
+  loadHistory();
+}
+
+async function retryHistory(id) {
+  const data = await api('retry', { value: id });
+  if (data.status) {
+    toast('Re-queued for processing');
+    loadHistory();
+    loadQueue();
+  } else {
+    toast(data.error || 'Retry failed', false);
+  }
+}
+
+// --- Files (WebDAV PROPFIND) ---
+async function loadFiles(path) {
+  filesPath = path;
+  try {
+    // Strip trailing slash for axum nest() compatibility (except for root)
+    let davPath = DAV + path;
+    if (davPath.endsWith('/') && davPath !== DAV + '/') davPath = davPath.slice(0, -1);
+    if (davPath === DAV + '/') davPath = DAV;
+    const r = await fetch(davPath, {
+      method: 'PROPFIND',
+      headers: { 'Depth': '1', 'Content-Type': 'application/xml' }
+    });
+    const xml = await r.text();
+    renderFiles(xml, path);
+  } catch (e) {
+    console.error('loadFiles', e);
+    $('#files-body').innerHTML = '';
+    $('#files-empty').style.display = '';
+    $('#files-empty').querySelector('p').textContent = 'Could not load directory';
+  }
+}
+
+function renderFiles(xml, path) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'application/xml');
+  const responses = doc.querySelectorAll('response');
+  const tbody = $('#files-body');
+  const empty = $('#files-empty');
+  tbody.innerHTML = '';
+
+  // Breadcrumb
+  const bc = $('#files-breadcrumb');
+  const parts = path.split('/').filter(Boolean);
+  let bcHtml = '<a onclick="loadFiles(\'/\')">root</a>';
+  let accumulated = '';
+  parts.forEach(p => {
+    accumulated += '/' + p;
+    const full = accumulated + '/';
+    bcHtml += ' <span style="color:var(--border)">/</span> <a onclick="loadFiles(\'' + esc(full) + '\')">' + esc(p) + '</a>';
+  });
+  bc.innerHTML = bcHtml;
+
+  const items = [];
+  responses.forEach(resp => {
+    const href = resp.querySelector('href')?.textContent || '';
+    const displayname = resp.querySelector('displayname')?.textContent || '';
+    const isCol = resp.querySelector('collection') !== null;
+    const size = resp.querySelector('getcontentlength')?.textContent || '';
+    const contentType = resp.querySelector('getcontenttype')?.textContent || '';
+
+    // Skip the directory itself (first response is the queried resource)
+    const itemPath = href.replace(/^\/dav/, '') || '/';
+    if (itemPath === path || itemPath === path.replace(/\/$/, '')) return;
+
+    items.push({ name: displayname || itemPath.split('/').filter(Boolean).pop() || '', isCol, size: parseInt(size) || 0, href: itemPath, contentType });
+  });
+
+  // Sort: directories first
+  items.sort((a, b) => (b.isCol - a.isCol) || a.name.localeCompare(b.name));
+
+  if (items.length === 0) {
+    empty.style.display = '';
+    tbody.parentElement.querySelector('thead').style.display = 'none';
+  } else {
+    empty.style.display = 'none';
+    tbody.parentElement.querySelector('thead').style.display = '';
+    items.forEach(f => {
+      if (f.isCol) {
+        tbody.innerHTML += `<tr>
+          <td><span class="dir-link" onclick="loadFiles('${esc(f.href)}')">${esc(f.name)}/</span></td>
+          <td class="mono">directory</td>
+          <td></td>
+        </tr>`;
+      } else {
+        const downloadUrl = DAV + f.href;
+        tbody.innerHTML += `<tr>
+          <td><a class="file-link" href="${esc(downloadUrl)}" target="_blank">${esc(f.name)}</a></td>
+          <td class="mono">${esc(f.contentType || 'file')}</td>
+          <td class="mono">${formatBytes(f.size)}</td>
+        </tr>`;
+      }
+    });
+  }
+}
+
+// --- Upload ---
+const dropZone = $('#drop-zone');
+const fileInput = $('#file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+function handleFiles(files) {
+  Array.from(files).forEach(f => {
+    if (!f.name.endsWith('.nzb')) {
+      toast('Skipping non-NZB file: ' + f.name, false);
+      return;
+    }
+    uploadNzb(f);
+  });
+}
+
+async function uploadNzb(file) {
+  const cat = $('#upload-cat').value || '';
+  const priority = $('#upload-priority').value || '0';
+  const form = new FormData();
+  form.append('nzbfile', file);
+  const p = new URLSearchParams({ mode: 'addfile', cat, priority });
+  if (apiKey) p.set('apikey', apiKey);
+  try {
+    const r = await fetch(API + '?' + p, { method: 'POST', body: form });
+    const data = await r.json();
+    if (data.status) {
+      toast('Added: ' + file.name);
+      loadQueue();
+    } else {
+      toast('Failed: ' + (data.error || 'unknown error'), false);
+    }
+  } catch (e) {
+    toast('Upload error: ' + e.message, false);
+  }
+}
+
+// --- Logs ---
+let logLines = [];
+
+async function loadLogs() {
+  try {
+    const r = await fetch('/api/logs');
+    const data = await r.json();
+    logLines = data;
+    renderLogLines();
+  } catch (e) {
+    console.error('loadLogs', e);
+  }
+}
+
+function addLogLine(line) {
+  logLines.push(line);
+  // Keep max 1000 in browser
+  if (logLines.length > 1000) logLines.shift();
+  if (currentTab === 'logs') renderLogLines();
+}
+
+function renderLogLines() {
+  const filter = $('#log-filter').value;
+  const out = $('#log-output');
+  const filtered = filter === 'all' ? logLines : logLines.filter(l => l.level === filter);
+  out.innerHTML = filtered.map(l => {
+    const color = l.level === 'ERROR' ? 'var(--red)' : l.level === 'WARN' ? 'var(--amber)' : 'var(--text-dim)';
+    const targetShort = l.target.split('::').pop();
+    return `<div><span style="color:var(--text-dim)">${esc(l.timestamp)}</span> <span style="color:${color};font-weight:600;min-width:42px;display:inline-block">${esc(l.level.padEnd(5))}</span> <span style="color:var(--accent)">${esc(targetShort)}</span> ${esc(l.message)}</div>`;
+  }).join('');
+  if ($('#log-autoscroll').checked) {
+    out.scrollTop = out.scrollHeight;
+  }
+}
+
+function clearLogs() {
+  logLines = [];
+  renderLogLines();
+}
+
+// --- Servers ---
+async function loadServers() {
+  try {
+    const r = await fetch('/api/servers');
+    const servers = await r.json();
+    const tbody = $('#servers-body');
+    const empty = $('#servers-empty');
+    tbody.innerHTML = '';
+    if (servers.length === 0) {
+      empty.style.display = '';
+      tbody.parentElement.querySelector('thead').style.display = 'none';
+    } else {
+      empty.style.display = 'none';
+      tbody.parentElement.querySelector('thead').style.display = '';
+      servers.forEach(s => {
+        tbody.innerHTML += `<tr>
+          <td>${esc(s.name)}</td>
+          <td class="mono">${esc(s.host)}</td>
+          <td class="mono">${s.port}</td>
+          <td class="mono">${s.connections}</td>
+          <td>${s.ssl ? 'Yes' : 'No'}</td>
+          <td class="mono">${s.priority}</td>
+          <td><span class="tag ${s.enabled ? 'tag-ok' : 'tag-fail'}">${s.enabled ? 'Yes' : 'No'}</span></td>
+          <td>
+            <button class="btn btn-sm" onclick="testServer('${s.id}')">Test</button>
+            <button class="btn btn-sm" onclick="editServer('${esc(JSON.stringify(s))}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteServer('${s.id}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+    }
+  } catch (e) {
+    console.error('loadServers', e);
+  }
+}
+
+function showAddServer() {
+  $('#sf-id').value = '';
+  $('#sf-name').value = '';
+  $('#sf-host').value = '';
+  $('#sf-port').value = '563';
+  $('#sf-user').value = '';
+  $('#sf-pass').value = '';
+  $('#sf-conns').value = '8';
+  $('#sf-priority').value = '0';
+  $('#sf-ssl').checked = true;
+  $('#sf-enabled').checked = true;
+  $('#sf-retention').value = '0';
+  $('#server-form-title').textContent = 'Add Server';
+  $('#server-form-panel').style.display = '';
+}
+
+function editServer(jsonStr) {
+  const s = JSON.parse(jsonStr);
+  $('#sf-id').value = s.id;
+  $('#sf-name').value = s.name || '';
+  $('#sf-host').value = s.host || '';
+  $('#sf-port').value = s.port || 563;
+  $('#sf-user').value = s.username || '';
+  $('#sf-pass').value = s.password || '';
+  $('#sf-conns').value = s.connections || 8;
+  $('#sf-priority').value = s.priority || 0;
+  $('#sf-ssl').checked = s.ssl !== false;
+  $('#sf-enabled').checked = s.enabled !== false;
+  $('#sf-retention').value = s.retention || 0;
+  $('#server-form-title').textContent = 'Edit Server';
+  $('#server-form-panel').style.display = '';
+}
+
+function hideServerForm() {
+  $('#server-form-panel').style.display = 'none';
+}
+
+async function saveServer() {
+  const id = $('#sf-id').value;
+  const body = {
+    id: id || '',
+    name: $('#sf-name').value,
+    host: $('#sf-host').value,
+    port: parseInt($('#sf-port').value) || 563,
+    username: $('#sf-user').value || null,
+    password: $('#sf-pass').value || null,
+    connections: parseInt($('#sf-conns').value) || 8,
+    priority: parseInt($('#sf-priority').value) || 0,
+    ssl: $('#sf-ssl').checked,
+    ssl_verify: true,
+    enabled: $('#sf-enabled').checked,
+    retention: parseInt($('#sf-retention').value) || 0,
+  };
+  if (!body.host) { toast('Host is required', false); return; }
+  try {
+    const url = id ? `/api/servers/${id}` : '/api/servers';
+    const method = id ? 'PUT' : 'POST';
+    const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (r.ok) {
+      toast(id ? 'Server updated' : 'Server added');
+      hideServerForm();
+      loadServers();
+    } else {
+      toast('Failed to save server', false);
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, false);
+  }
+}
+
+async function deleteServer(id) {
+  if (!confirm('Remove this server?')) return;
+  try {
+    await fetch(`/api/servers/${id}`, { method: 'DELETE' });
+    toast('Server removed');
+    loadServers();
+  } catch (e) {
+    toast('Error: ' + e.message, false);
+  }
+}
+
+async function testServer(id) {
+  toast('Testing connection...');
+  try {
+    const r = await fetch(`/api/servers/${id}/test`, { method: 'POST' });
+    const data = await r.json();
+    toast(data.message, data.success);
+  } catch (e) {
+    toast('Test failed: ' + e.message, false);
+  }
+}
+
+// --- Settings ---
+async function loadSettings() {
+  loadSettingsPage();
+}
+
+async function loadSettingsPage() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    $('#cfg-categories').value = s.categories || '';
+    $('#cfg-blocklist').value = s.file_blocklist || '';
+    $('#cfg-ensure-video').checked = s.ensure_importable_video;
+    $('#cfg-duplicate').value = s.duplicate_nzb_behavior || 'increment';
+    $('#cfg-readonly').checked = s.webdav_enforce_readonly;
+    $('#cfg-strm-url').value = s.strm_base_url || '';
+    $('#cfg-max-concurrent').value = s.max_concurrent_queue || 2;
+
+    const ver = await api('version');
+    $('#cfg-version').value = ver.version || '-';
+    $('#cfg-davurl').value = location.origin + '/dav/';
+    $('#cfg-apiurl').value = location.origin + '/api';
+    $('#cfg-ws').textContent = ws && ws.readyState === 1 ? 'Connected' : 'Disconnected';
+  } catch (e) {
+    console.error('loadSettings', e);
+  }
+}
+
+async function saveSettings() {
+  const body = {
+    categories: $('#cfg-categories').value,
+    file_blocklist: $('#cfg-blocklist').value,
+    ensure_importable_video: $('#cfg-ensure-video').checked,
+    duplicate_nzb_behavior: $('#cfg-duplicate').value,
+    import_strategy: 'direct',
+    webdav_enforce_readonly: $('#cfg-readonly').checked,
+    strm_base_url: $('#cfg-strm-url').value,
+    max_concurrent_queue: parseInt($('#cfg-max-concurrent').value) || 2,
+  };
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (r.ok) toast('Settings saved');
+    else toast('Failed to save settings', false);
+  } catch (e) {
+    toast('Error: ' + e.message, false);
+  }
+}
+
+function downloadBackup() {
+  window.open('/api/backup', '_blank');
+}
+
+// --- Categories loader ---
+async function loadCategories() {
+  try {
+    const data = await api('get_cats');
+    const sel = $('#upload-cat');
+    sel.innerHTML = '<option value="">Default</option>';
+    (data.categories || []).forEach(c => {
+      sel.innerHTML += `<option value="${esc(c)}">${esc(c)}</option>`;
+    });
+  } catch (e) {}
+}
+
+// --- WebSocket ---
+function connectWs() {
+  try {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      $('#ws-dot').className = 'status-dot dot-green';
+      $('#status-text').textContent = 'Connected';
+    };
+    ws.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.type === 'Queue') {
+          $('#queue-badge').textContent = ev.queue_count || 0;
+          if (ev.is_processing) {
+            $('#ws-dot').className = 'status-dot dot-amber';
+            $('#status-text').textContent = ev.current_job ? 'Processing: ' + ev.current_job : 'Processing...';
+          } else {
+            $('#ws-dot').className = 'status-dot dot-green';
+            $('#status-text').textContent = 'Idle';
+          }
+          if (currentTab === 'queue') loadQueue();
+        }
+        if (ev.type === 'History') {
+          if (currentTab === 'history') loadHistory();
+        }
+        if (ev.type === 'Log') {
+          addLogLine(ev);
+        }
+      } catch {}
+    };
+    ws.onclose = () => {
+      $('#ws-dot').className = 'status-dot dot-red';
+      $('#status-text').textContent = 'Disconnected';
+      setTimeout(connectWs, 3000);
+    };
+    ws.onerror = () => ws.close();
+  } catch {
+    setTimeout(connectWs, 3000);
+  }
+}
+
+// --- Escape HTML ---
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// --- Auto-refresh active tab every 3s ---
+setInterval(() => {
+  if (currentTab === 'queue') loadQueue();
+  if (currentTab === 'history') loadHistory();
+}, 3000);
+
+// --- Init ---
+loadQueue();
+loadCategories();
+connectWs();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+[package]
+name = "nzbdav-stream"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nzbdav-core = { workspace = true }
+nzb-nntp = { workspace = true }
+nzb-decode = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+arc-swap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+aes = { workspace = true }
+cbc = { workspace = true }
+
+[lints]
+workspace = true

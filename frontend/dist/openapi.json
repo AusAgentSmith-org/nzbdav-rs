@@ -1,0 +1,298 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "nzbdav-rs API",
+    "description": "Usenet virtual filesystem with WebDAV serving. SABnzbd-compatible API + server management REST API.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api": {
+      "get": {
+        "summary": "SABnzbd-compatible API",
+        "description": "Dispatch by `mode` query parameter. Supports GET and POST.",
+        "parameters": [
+          { "name": "mode", "in": "query", "required": true, "schema": { "type": "string", "enum": ["addfile", "addurl", "queue", "history", "version", "status", "fullstatus", "get_config", "get_cats"] } },
+          { "name": "apikey", "in": "query", "schema": { "type": "string" } },
+          { "name": "output", "in": "query", "schema": { "type": "string", "default": "json" } },
+          { "name": "name", "in": "query", "description": "Action: 'delete' for queue/history", "schema": { "type": "string" } },
+          { "name": "value", "in": "query", "description": "nzo_id for delete operations", "schema": { "type": "string" } },
+          { "name": "cat", "in": "query", "description": "Category for addfile", "schema": { "type": "string" } },
+          { "name": "priority", "in": "query", "description": "Priority (-1=Low, 0=Normal, 1=High, 2=Force)", "schema": { "type": "integer" } },
+          { "name": "start", "in": "query", "description": "Pagination offset for history", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "description": "Pagination limit for history", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "JSON response (shape varies by mode)" }
+        },
+        "tags": ["SABnzbd API"]
+      },
+      "post": {
+        "summary": "SABnzbd-compatible API (POST for addfile)",
+        "description": "Upload NZB via multipart form with mode=addfile.",
+        "parameters": [
+          { "name": "mode", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "cat", "in": "query", "schema": { "type": "string" } },
+          { "name": "priority", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nzbfile": { "type": "string", "format": "binary", "description": "NZB file to upload" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Upload result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "boolean" },
+                    "nzo_ids": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["SABnzbd API"]
+      }
+    },
+    "/api/servers": {
+      "get": {
+        "summary": "List all Usenet servers",
+        "responses": {
+          "200": {
+            "description": "Array of server configurations",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ServerEntry" } }
+              }
+            }
+          }
+        },
+        "tags": ["Server Management"]
+      },
+      "post": {
+        "summary": "Add a new Usenet server",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ServerEntry" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created server",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ServerEntry" }
+              }
+            }
+          }
+        },
+        "tags": ["Server Management"]
+      }
+    },
+    "/api/servers/{id}": {
+      "put": {
+        "summary": "Update a server",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ServerEntry" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated server" },
+          "404": { "description": "Server not found" }
+        },
+        "tags": ["Server Management"]
+      },
+      "delete": {
+        "summary": "Remove a server",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "204": { "description": "Server removed" },
+          "404": { "description": "Server not found" }
+        },
+        "tags": ["Server Management"]
+      }
+    },
+    "/api/servers/{id}/test": {
+      "post": {
+        "summary": "Test server connectivity",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Server Management"]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "summary": "Get application settings",
+        "responses": {
+          "200": {
+            "description": "Current settings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Settings" }
+              }
+            }
+          }
+        },
+        "tags": ["Settings"]
+      },
+      "put": {
+        "summary": "Update application settings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Settings" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated settings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Settings" }
+              }
+            }
+          }
+        },
+        "tags": ["Settings"]
+      }
+    },
+    "/api/backup": {
+      "get": {
+        "summary": "Download database backup",
+        "description": "Returns a SQLite database file as a download. Uses SQLite backup API for a consistent snapshot.",
+        "responses": {
+          "200": {
+            "description": "SQLite database file",
+            "content": {
+              "application/x-sqlite3": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        },
+        "tags": ["Settings"]
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "summary": "Get recent application log lines",
+        "responses": {
+          "200": {
+            "description": "Array of log lines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LogLine" }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["System"]
+      }
+    },
+    "/ws": {
+      "get": {
+        "summary": "WebSocket endpoint for real-time updates",
+        "description": "Upgrade to WebSocket. Receives JSON events: Queue, History, Status, Log.",
+        "responses": {
+          "101": { "description": "WebSocket upgrade" }
+        },
+        "tags": ["System"]
+      }
+    },
+    "/dav": {
+      "summary": "WebDAV endpoint",
+      "description": "Mount at /dav for WebDAV access. Supports PROPFIND, GET, HEAD, PUT, MKCOL, DELETE, MOVE, COPY, OPTIONS.",
+      "get": {
+        "summary": "GET file content (with Range support)",
+        "responses": {
+          "200": { "description": "File content" },
+          "206": { "description": "Partial content (Range request)" },
+          "404": { "description": "Not found" }
+        },
+        "tags": ["WebDAV"]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ServerEntry": {
+        "type": "object",
+        "required": ["host"],
+        "properties": {
+          "id": { "type": "string", "description": "UUID, auto-generated if empty" },
+          "name": { "type": "string" },
+          "host": { "type": "string" },
+          "port": { "type": "integer", "default": 563 },
+          "ssl": { "type": "boolean", "default": true },
+          "ssl_verify": { "type": "boolean", "default": true },
+          "username": { "type": "string", "nullable": true },
+          "password": { "type": "string", "nullable": true },
+          "connections": { "type": "integer", "default": 8 },
+          "priority": { "type": "integer", "default": 0, "description": "0 = highest priority" },
+          "enabled": { "type": "boolean", "default": true },
+          "retention": { "type": "integer", "default": 0, "description": "Days, 0 = unlimited" }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "categories": { "type": "string", "description": "Comma-separated categories (e.g. tv, movies, music)" },
+          "file_blocklist": { "type": "string", "description": "Comma-separated glob patterns to block (e.g. *.nfo, *.txt)" },
+          "ensure_importable_video": { "type": "boolean", "description": "Require at least one video file per NZB" },
+          "duplicate_nzb_behavior": { "type": "string", "enum": ["increment", "reject", "replace"], "description": "What to do when a duplicate NZB is added" },
+          "import_strategy": { "type": "string", "description": "Import strategy (direct)" },
+          "webdav_enforce_readonly": { "type": "boolean", "description": "Enforce read-only on /content/ directory" },
+          "strm_base_url": { "type": "string", "description": "Base URL for STRM file generation" }
+        }
+      },
+      "LogLine": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string" },
+          "level": { "type": "string", "enum": ["ERROR", "WARN", "INFO"] },
+          "target": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

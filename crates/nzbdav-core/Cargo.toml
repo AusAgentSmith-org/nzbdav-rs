@@ -1,0 +1,22 @@
+[package]
+name = "nzbdav-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nzb-core = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+glob = { workspace = true }
+md-5 = { workspace = true }
+
+[lints]
+workspace = true

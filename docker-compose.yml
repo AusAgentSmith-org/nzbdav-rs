@@ -1,0 +1,20 @@
+services:
+  nzbdav:
+    build: .
+    container_name: nzbdav
+    ports:
+      - "8080:8080"
+    volumes:
+      - nzbdav-data:/data
+    environment:
+      - NZBDAV_DB=/data/nzbdav.db
+      - NZBDAV_HOST=0.0.0.0
+      - NZBDAV_PORT=8080
+      - NZBDAV_LOG=info
+      # - NZBDAV_API_KEY=your-api-key
+      # - NZBDAV_WEBDAV_USER=user
+      # - NZBDAV_WEBDAV_PASS=pass
+    restart: unless-stopped
+
+volumes:
+  nzbdav-data:

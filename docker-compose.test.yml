@@ -1,0 +1,83 @@
+# Test stack: nzbdav-rs + Sonarr + Radarr + rclone
+# Usage: docker compose -f docker-compose.test.yml up -d
+
+services:
+  nzbdav:
+    build: .
+    container_name: nzbdav
+    ports:
+      - "8080:8080"
+    volumes:
+      - nzbdav-data:/data
+    environment:
+      - NZBDAV_DB=/data/nzbdav.db
+      - NZBDAV_HOST=0.0.0.0
+      - NZBDAV_PORT=8080
+      - NZBDAV_LOG=info
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    ports:
+      - "8989:8989"
+    volumes:
+      - sonarr-config:/config
+      - nzbdav-mount:/mnt/nzbdav:ro
+    depends_on:
+      - nzbdav
+      - rclone
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    ports:
+      - "7878:7878"
+    volumes:
+      - radarr-config:/config
+      - nzbdav-mount:/mnt/nzbdav:ro
+    depends_on:
+      - nzbdav
+      - rclone
+    restart: unless-stopped
+
+  rclone:
+    image: rclone/rclone:latest
+    container_name: rclone
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    entrypoint: >
+      rclone mount :webdav: /mnt/nzbdav
+      --webdav-url=http://nzbdav:8080/dav
+      --webdav-vendor=other
+      --dir-cache-time=5s
+      --vfs-cache-mode=off
+      --allow-other
+      --buffer-size=64M
+    volumes:
+      - nzbdav-mount:/mnt/nzbdav:shared
+    depends_on:
+      - nzbdav
+    restart: unless-stopped
+
+volumes:
+  nzbdav-data:
+  sonarr-config:
+  radarr-config:
+  nzbdav-mount:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
