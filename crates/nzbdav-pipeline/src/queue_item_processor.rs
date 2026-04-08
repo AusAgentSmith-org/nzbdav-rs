@@ -75,18 +75,25 @@ impl QueueItemProcessor {
         // ── 2. Create job directory ─────────────────────────────────────
         let category = &queue_item.category;
         let content_root_path = "/content/";
-        let category_path = format!("{content_root_path}{category}/");
-        let job_dir_path = format!("{category_path}{}/", queue_item.job_name);
 
-        // Ensure the category directory exists.
-        let category_dir = ensure_directory(conn, &category_path, category, content_root_path)?;
+        // If category is non-empty, create a subdirectory for it; otherwise
+        // place jobs directly under /content/.
+        let parent_path = if category.is_empty() {
+            content_root_path.to_string()
+        } else {
+            let category_path = format!("{content_root_path}{category}/");
+            let _category_dir =
+                ensure_directory(conn, &category_path, category, content_root_path)?;
+            category_path
+        };
+        let job_dir_path = format!("{parent_path}{}/", queue_item.job_name);
 
         // Ensure the job directory exists (may already exist from a previous failed attempt).
         let job_dir = ensure_directory_with_history(
             conn,
             &job_dir_path,
             &queue_item.job_name,
-            &category_path,
+            &parent_path,
             Some(queue_item.id),
         )?;
 

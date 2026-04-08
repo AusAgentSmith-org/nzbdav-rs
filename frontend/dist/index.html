@@ -33,8 +33,8 @@ aside{width:220px;background:var(--sidebar);border-right:1px solid var(--border)
 .nav-item.active{background:rgba(124,92,252,.12);color:var(--accent-light)}
 .nav-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
 .nav-badge{margin-left:auto;font-size:11px;background:var(--accent);color:#fff;padding:1px 7px;border-radius:100px;min-width:20px;text-align:center}
-.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border)}
-.sidebar-footer .version{font-size:11px;color:var(--text-dim)}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--border);min-width:0}
+.sidebar-footer .version{font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px}
 .dot-green{background:var(--green)}
 .dot-amber{background:var(--amber)}
@@ -60,9 +60,9 @@ aside{width:220px;background:var(--sidebar);border-right:1px solid var(--border)
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px}
 .panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
 .panel-head h2{font-size:13px;font-weight:600}
-table{width:100%;border-collapse:collapse}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
 th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-dim);padding:8px 20px;border-bottom:1px solid var(--border)}
-td{padding:11px 20px;font-size:13px;border-bottom:1px solid var(--border)}
+td{padding:11px 20px;font-size:13px;border-bottom:1px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(124,92,252,.03)}
 .mono{font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:var(--text-dim)}
@@ -108,7 +108,7 @@ select.form-input{cursor:pointer}
 
 /* Toast */
 .toast-container{position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px}
-.toast{padding:10px 16px;border-radius:8px;font-size:12px;animation:slideIn .2s;max-width:360px}
+.toast{padding:10px 16px;border-radius:8px;font-size:12px;animation:slideIn .2s;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast-ok{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--green)}
 .toast-err{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--red)}
 @keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -136,7 +136,7 @@ select.form-input{cursor:pointer}
 <body>
 
 <aside>
-  <div class="logo"><span>nzb</span>dav</div>
+  <div class="logo"><span>nzb</span>dav-rs</div>
   <div class="nav-group">
     <div class="nav-label">Monitor</div>
     <a class="nav-item active" data-tab="queue">
@@ -314,7 +314,8 @@ select.form-input{cursor:pointer}
         <div class="panel-head" style="flex-shrink:0">
           <h2>Application Logs</h2>
           <div style="display:flex;gap:8px;align-items:center">
-            <label style="font-size:11px;color:var(--text-dim)">Filter:</label>
+            <input class="form-input" id="log-search" type="text" placeholder="Search logs..." style="width:180px;padding:4px 8px;font-size:11px" oninput="renderLogLines()">
+            <label style="font-size:11px;color:var(--text-dim)">Level:</label>
             <select class="form-input" id="log-filter" style="width:100px;padding:4px 8px" onchange="renderLogLines()">
               <option value="all">All</option>
               <option value="ERROR">Error</option>
@@ -529,14 +530,14 @@ async function loadHistory() {
       h.slots.forEach(s => {
         if (s.status === 'Failed') failed++;
         const tag = s.status === 'Completed' ? 'tag-ok' : 'tag-fail';
-        const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="retryHistory('${s.nzo_id}')">Retry</button> ` : '';
-        tbody.innerHTML += `<tr>
+        const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="event.stopPropagation();retryHistory('${s.nzo_id}')">Retry</button> ` : '';
+        tbody.innerHTML += `<tr style="cursor:pointer" onclick="showLogsFor('${esc(s.name)}')" title="Click to view logs">
           <td>${esc(s.name)}</td>
           <td class="mono">${esc(s.category)}</td>
           <td class="mono">${formatBytes(s.bytes)}</td>
           <td><span class="tag ${tag}">${esc(s.status)}</span></td>
           <td class="mono">${timeAgo(s.completed)}</td>
-          <td>${retryBtn}<button class="btn btn-sm btn-danger" onclick="removeHistory('${s.nzo_id}')">Delete</button></td>
+          <td>${retryBtn}<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeHistory('${s.nzo_id}')">Delete</button></td>
         </tr>`;
       });
     }
@@ -716,8 +717,10 @@ function addLogLine(line) {
 
 function renderLogLines() {
   const filter = $('#log-filter').value;
+  const search = ($('#log-search').value || '').toLowerCase();
   const out = $('#log-output');
-  const filtered = filter === 'all' ? logLines : logLines.filter(l => l.level === filter);
+  let filtered = filter === 'all' ? logLines : logLines.filter(l => l.level === filter);
+  if (search) filtered = filtered.filter(l => l.message.toLowerCase().includes(search) || l.target.toLowerCase().includes(search));
   out.innerHTML = filtered.map(l => {
     const color = l.level === 'ERROR' ? 'var(--red)' : l.level === 'WARN' ? 'var(--amber)' : 'var(--text-dim)';
     const targetShort = l.target.split('::').pop();
@@ -726,6 +729,12 @@ function renderLogLines() {
   if ($('#log-autoscroll').checked) {
     out.scrollTop = out.scrollHeight;
   }
+}
+
+function showLogsFor(name) {
+  $('#log-search').value = name;
+  switchTab('logs');
+  loadLogs();
 }
 
 function clearLogs() {
