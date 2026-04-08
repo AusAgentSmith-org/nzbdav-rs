@@ -1,6 +1,6 @@
 services:
   nzbdav:
-    build: .
+    image: ausagentsmith/nzbdav-rs:latest
     container_name: nzbdav
     ports:
       - "8080:8080"
