@@ -132,7 +132,7 @@ steps:
         branch: master
     environment:
       GH_TOKEN:
-        from_secret: gh_release_token
+        from_secret: github_mirror_token
       FORGEJO_TOKEN:
         from_secret: git_auth_token
     commands:
