@@ -248,10 +248,7 @@ mod tests {
             ItemSubType::try_from(203).unwrap(),
             ItemSubType::MultipartFile
         );
-        assert_eq!(
-            ItemSubType::try_from(204).unwrap(),
-            ItemSubType::ReadmeFile
-        );
+        assert_eq!(ItemSubType::try_from(204).unwrap(), ItemSubType::ReadmeFile);
         assert!(ItemSubType::try_from(0).is_err());
         assert!(ItemSubType::try_from(999).is_err());
     }
@@ -262,10 +259,7 @@ mod tests {
             DownloadStatus::try_from(1).unwrap(),
             DownloadStatus::Completed
         );
-        assert_eq!(
-            DownloadStatus::try_from(2).unwrap(),
-            DownloadStatus::Failed
-        );
+        assert_eq!(DownloadStatus::try_from(2).unwrap(), DownloadStatus::Failed);
         assert!(DownloadStatus::try_from(0).is_err());
         assert!(DownloadStatus::try_from(3).is_err());
     }

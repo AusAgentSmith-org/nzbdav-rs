@@ -150,9 +150,7 @@ impl ArrClient {
         if ids.is_empty() {
             return Ok(());
         }
-        let body = BulkDeleteBody {
-            ids: ids.to_vec(),
-        };
+        let body = BulkDeleteBody { ids: ids.to_vec() };
         let resp = self
             .request(Method::DELETE, "queue/bulk")
             .query(&[

@@ -98,10 +98,7 @@ pub fn derive_rar5_key(password: &str, header: &Rar5EncryptionHeader) -> Result<
     // IV is not derived here — it comes from the encrypted header's data area.
     // We'll store a zeroed IV; the caller sets it from the first 16 bytes of
     // the encrypted data block.
-    Ok(DerivedKey {
-        key,
-        iv: [0u8; 16],
-    })
+    Ok(DerivedKey { key, iv: [0u8; 16] })
 }
 
 /// Decrypt a RAR5 encrypted data block using AES-256-CBC.
@@ -199,7 +196,10 @@ mod tests {
         };
 
         let result = derive_rar5_key("U0b7258526OROQY", &header);
-        assert!(result.is_ok(), "derive_rar5_key should succeed with correct password: {result:?}");
+        assert!(
+            result.is_ok(),
+            "derive_rar5_key should succeed with correct password: {result:?}"
+        );
     }
 
     #[test]
@@ -215,7 +215,10 @@ mod tests {
         };
 
         let result = derive_rar5_key("wrong_password", &header);
-        assert!(result.is_err(), "derive_rar5_key should fail with wrong password");
+        assert!(
+            result.is_err(),
+            "derive_rar5_key should fail with wrong password"
+        );
         assert!(
             matches!(result, Err(RarError::IncorrectPassword)),
             "expected IncorrectPassword error, got: {result:?}"
@@ -235,7 +238,10 @@ mod tests {
         };
 
         let result = derive_rar5_key("anything", &header);
-        assert!(result.is_ok(), "derive_rar5_key with no check should always succeed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "derive_rar5_key with no check should always succeed: {result:?}"
+        );
 
         // Even with a different password it succeeds (no verification)
         let result2 = derive_rar5_key("totally_different", &header);

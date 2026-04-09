@@ -35,4 +35,3 @@ const _: () = {
         let _ = &f.encryption;
     }
 };
-

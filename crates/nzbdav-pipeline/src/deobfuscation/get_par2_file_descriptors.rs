@@ -56,13 +56,14 @@ pub async fn get_par2_file_descriptors(
     // If parsing fails, log a warning and return empty — deobfuscation will
     // fall back to subject/yEnc filenames.
     let mut cursor = Cursor::new(&par2_data);
-    let descriptors: Vec<Par2File> = match rust_par2::parse_par2_reader(&mut cursor, par2_data.len() as u64) {
-        Ok(file_set) => file_set.files.into_values().collect(),
-        Err(e) => {
-            warn!("failed to parse PAR2 index file (falling back to subject names): {e}");
-            return Ok(Vec::new());
-        }
-    };
+    let descriptors: Vec<Par2File> =
+        match rust_par2::parse_par2_reader(&mut cursor, par2_data.len() as u64) {
+            Ok(file_set) => file_set.files.into_values().collect(),
+            Err(e) => {
+                warn!("failed to parse PAR2 index file (falling back to subject names): {e}");
+                return Ok(Vec::new());
+            }
+        };
 
     debug!(
         descriptor_count = descriptors.len(),

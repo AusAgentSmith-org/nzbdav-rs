@@ -48,8 +48,7 @@ impl NzbFileStream {
         file_size: u64,
         lookahead: usize,
     ) -> Self {
-        let inner =
-            MultiSegmentStream::new(Arc::clone(&provider), segment_ids.clone(), lookahead);
+        let inner = MultiSegmentStream::new(Arc::clone(&provider), segment_ids.clone(), lookahead);
         Self {
             provider,
             segment_ids,
@@ -69,10 +68,7 @@ impl NzbFileStream {
     /// handles seeks without async I/O. This method is retained for a
     /// future phase where seek refinement is done asynchronously.
     #[allow(dead_code)]
-    async fn resolve_segment_for_offset(
-        &self,
-        offset: u64,
-    ) -> Result<(usize, usize), StreamError> {
+    async fn resolve_segment_for_offset(&self, offset: u64) -> Result<(usize, usize), StreamError> {
         let num_segments = self.segment_ids.len();
         if num_segments == 0 {
             return Err(StreamError::SeekPositionNotFound(offset as i64));
@@ -107,10 +103,7 @@ impl NzbFileStream {
         // Binary search the remaining range.
         while lo <= hi {
             let mid = lo + (hi - lo) / 2;
-            let h = self
-                .provider
-                .yenc_headers(&self.segment_ids[mid])
-                .await?;
+            let h = self.provider.yenc_headers(&self.segment_ids[mid]).await?;
 
             if offset >= h.part_begin && offset < h.part_end {
                 best_seg = mid;
@@ -133,21 +126,15 @@ impl NzbFileStream {
         }
 
         // Fallback: use estimated segment with no skip (best effort).
-        debug!(
-            offset,
-            estimated, "seek fallback to estimated segment"
-        );
+        debug!(offset, estimated, "seek fallback to estimated segment");
         Ok((best_seg, best_skip))
     }
 
     /// Rebuild the inner stream starting from `segment_idx`.
     fn rebuild_inner(&mut self, segment_idx: usize, skip: usize) {
         let remaining_ids = self.segment_ids[segment_idx..].to_vec();
-        self.inner = MultiSegmentStream::new(
-            Arc::clone(&self.provider),
-            remaining_ids,
-            self.lookahead,
-        );
+        self.inner =
+            MultiSegmentStream::new(Arc::clone(&self.provider), remaining_ids, self.lookahead);
         self.skip_bytes = skip;
     }
 }
@@ -221,10 +208,7 @@ impl AsyncSeek for NzbFileStream {
         Ok(())
     }
 
-    fn poll_complete(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<u64>> {
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
         let target = match self.pending_seek.take() {
             Some(t) => t,
             None => return Poll::Ready(Ok(self.position)),

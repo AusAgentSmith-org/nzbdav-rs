@@ -76,7 +76,10 @@ const SERVERS_KEY: &str = "usenet.servers";
 
 /// Load saved servers from the config DB.
 fn load_servers(state: &AppState) -> Vec<ServerEntry> {
-    let json = state.config.get(SERVERS_KEY).unwrap_or_else(|| "[]".to_string());
+    let json = state
+        .config
+        .get(SERVERS_KEY)
+        .unwrap_or_else(|| "[]".to_string());
     serde_json::from_str(&json).unwrap_or_default()
 }
 
@@ -222,10 +225,10 @@ pub fn init_pools_from_config(state: &AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
     use axum::body::Body;
     use axum::http::Request;
     use axum::routing::{get, put};
-    use axum::Router;
     use tower::ServiceExt;
 
     use crate::state::AppState;
@@ -236,7 +239,8 @@ mod tests {
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
-        let (_, queue_status) = tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
+        let (_, queue_status) =
+            tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
         AppState {
             db,
             config,

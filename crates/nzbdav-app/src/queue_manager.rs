@@ -75,7 +75,9 @@ async fn run_loop(
             match result {
                 Ok(id) => {
                     active_ids.remove(&id);
-                    status_tx.send_modify(|s| { s.active_ids.remove(&id); });
+                    status_tx.send_modify(|s| {
+                        s.active_ids.remove(&id);
+                    });
                 }
                 Err(e) => {
                     error!(error = %e, "queue task panicked");
@@ -220,7 +222,13 @@ async fn process_single_item(
     match result {
         Ok(pr) => {
             info!(job_name = %job_name, items_created = pr.items_created, "processed successfully");
-            move_to_history(&conn, &item, DownloadStatus::Completed, None, Some(pr.job_dir_id));
+            move_to_history(
+                &conn,
+                &item,
+                DownloadStatus::Completed,
+                None,
+                Some(pr.job_dir_id),
+            );
             status_tx.send_modify(|s| {
                 s.items_processed += 1;
                 s.last_error = None;
@@ -236,7 +244,13 @@ async fn process_single_item(
                 }
             } else {
                 error!(job_name = %job_name, error = %e, "non-retryable error — failing");
-                move_to_history(&conn, &item, DownloadStatus::Failed, Some(e.to_string()), None);
+                move_to_history(
+                    &conn,
+                    &item,
+                    DownloadStatus::Failed,
+                    Some(e.to_string()),
+                    None,
+                );
             }
             status_tx.send_modify(|s| {
                 s.last_error = Some(e.to_string());

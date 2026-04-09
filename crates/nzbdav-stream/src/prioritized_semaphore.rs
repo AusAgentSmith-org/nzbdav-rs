@@ -109,7 +109,10 @@ mod tests {
         // Low priority should block because low_gate capacity is 0
         let sem2 = PrioritizedSemaphore::new(2, 2);
         let result = timeout(Duration::from_millis(100), sem2.acquire_low()).await;
-        assert!(result.is_err(), "acquire_low should block when all permits are reserved");
+        assert!(
+            result.is_err(),
+            "acquire_low should block when all permits are reserved"
+        );
     }
 
     #[tokio::test]
@@ -145,9 +148,7 @@ mod tests {
 
         // Low should be blocked (shared exhausted)
         let sem_clone = Arc::clone(&sem);
-        let handle = tokio::spawn(async move {
-            sem_clone.acquire_low().await
-        });
+        let handle = tokio::spawn(async move { sem_clone.acquire_low().await });
 
         // Give the spawned task a chance to start waiting
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -156,7 +157,10 @@ mod tests {
         // Release one high permit — low should now unblock
         drop(h1);
         let result = timeout(Duration::from_millis(200), handle).await;
-        assert!(result.is_ok(), "low acquire should unblock after high permit released");
+        assert!(
+            result.is_ok(),
+            "low acquire should unblock after high permit released"
+        );
 
         drop(h2);
     }

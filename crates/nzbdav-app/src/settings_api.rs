@@ -21,7 +21,9 @@ pub struct SettingsResponse {
 pub async fn get_settings(State(state): State<AppState>) -> Json<SettingsResponse> {
     Json(SettingsResponse {
         categories: state.config.get_or_default("api.categories", ""),
-        file_blocklist: state.config.get_or_default("api.download-file-blocklist", ""),
+        file_blocklist: state
+            .config
+            .get_or_default("api.download-file-blocklist", ""),
         ensure_importable_video: state.config.is_ensure_importable_video_enabled(),
         duplicate_nzb_behavior: state.config.get_duplicate_nzb_behavior(),
         import_strategy: state.config.get_import_strategy(),
@@ -160,10 +162,10 @@ pub async fn backup_database(State(state): State<AppState>) -> impl IntoResponse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
     use axum::body::Body;
     use axum::http::Request;
     use axum::routing::get;
-    use axum::Router;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -173,7 +175,8 @@ mod tests {
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
-        let (_, queue_status) = tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
+        let (_, queue_status) =
+            tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
         AppState {
             db,
             config,
@@ -186,10 +189,7 @@ mod tests {
     fn test_router() -> Router {
         let state = test_state();
         Router::new()
-            .route(
-                "/api/settings",
-                get(get_settings).put(update_settings),
-            )
+            .route("/api/settings", get(get_settings).put(update_settings))
             .with_state(state)
     }
 
@@ -197,11 +197,7 @@ mod tests {
     async fn test_get_settings_defaults() {
         let app = test_router();
         let resp = app
-            .oneshot(
-                Request::get("/api/settings")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/api/settings").body(Body::empty()).unwrap())
             .await
             .unwrap();
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)

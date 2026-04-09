@@ -17,8 +17,7 @@ use nzbdav_stream::provider::UsenetArticleProvider;
 
 use crate::aggregators::{aggregate_plain_files, aggregate_rar_files};
 use crate::deobfuscation::{
-    fetch_first_segments::fetch_first_segments,
-    get_file_infos::get_file_infos,
+    fetch_first_segments::fetch_first_segments, get_file_infos::get_file_infos,
     get_par2_file_descriptors::get_par2_file_descriptors,
 };
 use crate::error::{PipelineError, Result};
@@ -110,10 +109,7 @@ impl QueueItemProcessor {
 
         get_file_infos(&mut file_infos, &par2_files);
 
-        info!(
-            file_count = file_infos.len(),
-            "deobfuscation complete"
-        );
+        info!(file_count = file_infos.len(), "deobfuscation complete");
 
         // ── 4. Split files into RAR vs plain ────────────────────────────
         let rar_files: Vec<_> = file_infos.iter().filter(|f| f.is_rar).cloned().collect();
@@ -125,8 +121,7 @@ impl QueueItemProcessor {
 
         // ── 5. Process ──────────────────────────────────────────────────
         // Extract password: first check NZB filename {{password}}, then NZB XML metadata
-        let password = get_nzb_password(&queue_item.file_name)
-            .or_else(|| job.password.clone());
+        let password = get_nzb_password(&queue_item.file_name).or_else(|| job.password.clone());
         if password.is_some() {
             info!(
                 job_name = %queue_item.job_name,
@@ -145,10 +140,13 @@ impl QueueItemProcessor {
         );
 
         // ── 6. Aggregate ────────────────────────────────────────────────
-        let rar_aggregated =
-            aggregate_rar_files(&processed_rar, job_dir.id, &job_dir_path, password.as_deref())?;
-        let plain_aggregated =
-            aggregate_plain_files(&processed_plain, job_dir.id, &job_dir_path);
+        let rar_aggregated = aggregate_rar_files(
+            &processed_rar,
+            job_dir.id,
+            &job_dir_path,
+            password.as_deref(),
+        )?;
+        let plain_aggregated = aggregate_plain_files(&processed_plain, job_dir.id, &job_dir_path);
 
         // Collect all DavItems for post-processing.
         let mut items: Vec<DavItem> = Vec::new();
@@ -186,8 +184,7 @@ impl QueueItemProcessor {
         // ── 8. Persist to database ──────────────────────────────────────
         // Collect the IDs of items that survived post-processing (blocklist
         // may have removed some).
-        let surviving_ids: std::collections::HashSet<Uuid> =
-            items.iter().map(|i| i.id).collect();
+        let surviving_ids: std::collections::HashSet<Uuid> = items.iter().map(|i| i.id).collect();
 
         let mut total_created: usize = 0;
 
@@ -252,8 +249,9 @@ fn ensure_directory(
     }
 
     // Find the parent.
-    let parent = dav_items::get_by_path(conn, parent_path)?
-        .ok_or_else(|| PipelineError::Other(format!("parent directory not found: {parent_path}")))?;
+    let parent = dav_items::get_by_path(conn, parent_path)?.ok_or_else(|| {
+        PipelineError::Other(format!("parent directory not found: {parent_path}"))
+    })?;
 
     create_directory(conn, path, name, parent.id, None)
 }
@@ -271,8 +269,9 @@ fn ensure_directory_with_history(
         return Ok(existing);
     }
 
-    let parent = dav_items::get_by_path(conn, parent_path)?
-        .ok_or_else(|| PipelineError::Other(format!("parent directory not found: {parent_path}")))?;
+    let parent = dav_items::get_by_path(conn, parent_path)?.ok_or_else(|| {
+        PipelineError::Other(format!("parent directory not found: {parent_path}"))
+    })?;
 
     create_directory(conn, path, name, parent.id, history_item_id)
 }

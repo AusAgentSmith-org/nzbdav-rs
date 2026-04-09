@@ -70,9 +70,9 @@ pub fn parse_range(header: &str, file_size: u64) -> Result<Vec<ByteRange>> {
                 }
             } else {
                 // Full range: bytes=N-M
-                let end: u64 = end_s.parse().map_err(|_| {
-                    DavServerError::InvalidRange(format!("invalid end: {part}"))
-                })?;
+                let end: u64 = end_s
+                    .parse()
+                    .map_err(|_| DavServerError::InvalidRange(format!("invalid end: {part}")))?;
                 if start > end || start >= file_size {
                     return Err(DavServerError::InvalidRange(format!(
                         "unsatisfiable range: {part}"

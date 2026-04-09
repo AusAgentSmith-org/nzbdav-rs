@@ -22,8 +22,7 @@ pub async fn api_key_auth(
     if let Some(query) = req.uri().query() {
         for pair in query.split('&') {
             if let Some(value) = pair.strip_prefix("apikey=") {
-                let decoded = percent_encoding::percent_decode_str(value)
-                    .decode_utf8_lossy();
+                let decoded = percent_encoding::percent_decode_str(value).decode_utf8_lossy();
                 if decoded == expected_key {
                     return Ok(next.run(req).await);
                 }
@@ -107,11 +106,11 @@ pub async fn basic_auth(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
     use axum::body::Body;
     use axum::http::Request;
     use axum::middleware;
     use axum::routing::get;
-    use axum::Router;
     use tower::ServiceExt;
 
     /// A trivial handler that returns 200 OK if the middleware passes.

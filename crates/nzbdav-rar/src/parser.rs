@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use crate::error::{RarError, Result};
 use crate::header::{FileHeader, RarHeader};
-use crate::{detect_version, RarVersion};
+use crate::{RarVersion, detect_version};
 
 /// Parse a RAR archive and return only `FileHeader` entries with store (m0) compression.
 ///

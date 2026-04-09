@@ -9,8 +9,8 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
 
 use crate::websocket::WsEvent;
 
@@ -92,7 +92,8 @@ impl Visit for MessageVisitor {
         if field.name() == "message" {
             self.message = format!("{value:?}");
         } else {
-            self.fields.push((field.name().to_string(), format!("{value:?}")));
+            self.fields
+                .push((field.name().to_string(), format!("{value:?}")));
         }
     }
 
@@ -100,7 +101,8 @@ impl Visit for MessageVisitor {
         if field.name() == "message" {
             self.message = value.to_string();
         } else {
-            self.fields.push((field.name().to_string(), value.to_string()));
+            self.fields
+                .push((field.name().to_string(), value.to_string()));
         }
     }
 }

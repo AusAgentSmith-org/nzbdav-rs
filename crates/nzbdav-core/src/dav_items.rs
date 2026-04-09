@@ -1,5 +1,5 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 use uuid::Uuid;
 
 use crate::error::{DavError, Result};
@@ -19,28 +19,44 @@ fn row_to_dav_item(row: &Row) -> rusqlite::Result<DavItem> {
     let nzb_blob_id: Option<String> = row.get("nzb_blob_id")?;
 
     let parse_uuid = |s: String| -> rusqlite::Result<Uuid> {
-        Uuid::parse_str(&s)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+        Uuid::parse_str(&s).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })
     };
 
     let parse_rfc3339 = |s: String| -> rusqlite::Result<DateTime<Utc>> {
         DateTime::parse_from_rfc3339(&s)
             .map(|dt| dt.with_timezone(&Utc))
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })
     };
 
     Ok(DavItem {
         id: parse_uuid(id)?,
         id_prefix: row.get("id_prefix")?,
-        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
+        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S").map_err(
+            |e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            },
+        )?,
         parent_id: parent_id.map(parse_uuid).transpose()?,
         name: row.get("name")?,
         file_size: row.get("file_size")?,
-        item_type: ItemType::try_from(item_type_i)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into()))?,
-        sub_type: ItemSubType::try_from(sub_type_i)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into()))?,
+        item_type: ItemType::try_from(item_type_i).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into())
+        })?,
+        sub_type: ItemSubType::try_from(sub_type_i).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into())
+        })?,
         path: row.get("path")?,
         release_date: release_date_str.map(parse_rfc3339).transpose()?,
         last_health_check: last_health_check_str.map(parse_rfc3339).transpose()?,
@@ -127,7 +143,10 @@ pub fn get_children_by_path(conn: &Connection, parent_path: &str) -> Result<Vec<
 }
 
 pub fn delete(conn: &Connection, id: Uuid) -> Result<()> {
-    conn.execute("DELETE FROM dav_items WHERE id = ?1", params![id.to_string()])?;
+    conn.execute(
+        "DELETE FROM dav_items WHERE id = ?1",
+        params![id.to_string()],
+    )?;
     Ok(())
 }
 

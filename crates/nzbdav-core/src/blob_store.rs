@@ -15,13 +15,11 @@ impl BlobStore {
 
     pub fn get(conn: &Connection, table: &str, id: Uuid) -> Result<Vec<u8>> {
         let sql = format!("SELECT data FROM {table} WHERE id = ?1");
-        conn.query_row(&sql, rusqlite::params![id.to_string()], |row| {
-            row.get(0)
-        })
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => DavError::BlobNotFound(id.to_string()),
-            other => DavError::Database(other),
-        })
+        conn.query_row(&sql, rusqlite::params![id.to_string()], |row| row.get(0))
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => DavError::BlobNotFound(id.to_string()),
+                other => DavError::Database(other),
+            })
     }
 
     pub fn delete(conn: &Connection, table: &str, id: Uuid) -> Result<()> {

@@ -1,7 +1,7 @@
 //! PROPFIND XML response generation (DAV:multistatus).
 
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 
 use crate::store::DavNode;
 
@@ -15,13 +15,19 @@ pub fn multistatus_xml(nodes: &[DavNode], base_href: &str) -> String {
 
     // XML declaration
     writer
-        .write_event(Event::Decl(quick_xml::events::BytesDecl::new("1.0", Some("utf-8"), None)))
+        .write_event(Event::Decl(quick_xml::events::BytesDecl::new(
+            "1.0",
+            Some("utf-8"),
+            None,
+        )))
         .expect("xml decl");
 
     // <D:multistatus xmlns:D="DAV:">
     let mut ms = BytesStart::new("D:multistatus");
     ms.push_attribute(("xmlns:D", "DAV:"));
-    writer.write_event(Event::Start(ms)).expect("multistatus start");
+    writer
+        .write_event(Event::Start(ms))
+        .expect("multistatus start");
 
     for (i, node) in nodes.iter().enumerate() {
         let href = if i == 0 {

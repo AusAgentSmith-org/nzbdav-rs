@@ -14,10 +14,10 @@ mod websocket;
 
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::response::Json;
 use axum::Router;
+use axum::extract::State;
 use axum::middleware;
+use axum::response::Json;
 use axum::routing::get;
 use clap::Parser;
 use parking_lot::Mutex;
@@ -45,8 +45,8 @@ async fn main() -> anyhow::Result<()> {
     let log_buffer = LogBuffer::new();
 
     // 2. Tracing — fmt layer + capture layer
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
     // We'll set up the capture layer's WS sender after creating the WS manager.
     // For now, init with just the buffer capture (no WS broadcast yet).
     let capture_layer = CaptureLayer::new(log_buffer.clone());
@@ -145,7 +145,12 @@ async fn debug_stream_segment(
     match state.provider.fetch_decoded(&message_id).await {
         Ok(data) => {
             let len = data.len();
-            let first16 = data.iter().take(16).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+            let first16 = data
+                .iter()
+                .take(16)
+                .map(|b| format!("{b:02x}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             let zeros = data.iter().filter(|&&b| b == 0).count();
             tracing::info!(bytes = len, first_16 = %first16, zeros, "debug: direct fetch OK");
 
@@ -161,11 +166,16 @@ async fn debug_stream_segment(
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "application/octet-stream")],
                 body,
-            ).into_response()
+            )
+                .into_response()
         }
         Err(e) => {
             tracing::error!(error = %e, "debug: fetch failed");
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Fetch failed: {e}")).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Fetch failed: {e}"),
+            )
+                .into_response()
         }
     }
 }
@@ -188,17 +198,26 @@ fn build_router(
 
     // Server management REST API
     let servers = Router::new()
-        .route("/api/servers", get(server_api::list_servers).post(server_api::add_server))
-        .route("/api/servers/{id}", put(server_api::update_server).delete(server_api::delete_server))
+        .route(
+            "/api/servers",
+            get(server_api::list_servers).post(server_api::add_server),
+        )
+        .route(
+            "/api/servers/{id}",
+            put(server_api::update_server).delete(server_api::delete_server),
+        )
         .route("/api/servers/{id}/test", post(server_api::test_server));
 
     // Debug endpoint for stream testing
-    let debug_routes = Router::new()
-        .route("/api/debug/stream/{message_id}", get(debug_stream_segment));
+    let debug_routes =
+        Router::new().route("/api/debug/stream/{message_id}", get(debug_stream_segment));
 
     // Settings + backup API
     let settings = Router::new()
-        .route("/api/settings", get(settings_api::get_settings).put(settings_api::update_settings))
+        .route(
+            "/api/settings",
+            get(settings_api::get_settings).put(settings_api::update_settings),
+        )
         .route("/api/backup", get(settings_api::backup_database));
 
     // Logs API

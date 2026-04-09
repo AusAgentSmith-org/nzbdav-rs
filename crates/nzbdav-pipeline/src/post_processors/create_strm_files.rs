@@ -88,7 +88,12 @@ mod tests {
             "/content/movies/job/movie.mkv",
         )];
 
-        let strms = create_strm_items(&items, parent_id, "/content/movies/job/", "http://localhost:8080");
+        let strms = create_strm_items(
+            &items,
+            parent_id,
+            "/content/movies/job/",
+            "http://localhost:8080",
+        );
         assert_eq!(strms.len(), 1);
         assert_eq!(strms[0].name, "movie.strm");
         assert_eq!(strms[0].path, "/content/movies/job/movie.strm");
@@ -116,7 +121,12 @@ mod tests {
 
     #[test]
     fn empty_input_returns_empty() {
-        let strms = create_strm_items(&[], Uuid::new_v4(), "/content/job/", "http://localhost:8080");
+        let strms = create_strm_items(
+            &[],
+            Uuid::new_v4(),
+            "/content/job/",
+            "http://localhost:8080",
+        );
         assert!(strms.is_empty());
     }
 }

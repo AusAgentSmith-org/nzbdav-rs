@@ -58,7 +58,9 @@ impl ConfigManager {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             rusqlite::params![key, value],
         )?;
-        self.cache.write().insert(key.to_string(), value.to_string());
+        self.cache
+            .write()
+            .insert(key.to_string(), value.to_string());
         Ok(())
     }
 

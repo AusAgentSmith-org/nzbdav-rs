@@ -50,9 +50,12 @@ pub async fn sab_api(
         "retry" => handle_retry(state, params),
         "version" => {
             // Report SABnzbd-compatible version (>= 0.7.0) so Sonarr/Radarr accept us
-            Json(serde_json::to_value(VersionResponse {
-                version: "4.0.0".to_string(),
-            }).unwrap())
+            Json(
+                serde_json::to_value(VersionResponse {
+                    version: "4.0.0".to_string(),
+                })
+                .unwrap(),
+            )
         }
         "status" | "fullstatus" => {
             // SABnzbd-compatible fullstatus — Sonarr parses specific nested fields
@@ -121,10 +124,13 @@ pub async fn sab_api(
         }
         unknown => {
             warn!(mode = %unknown, "unknown SAB API mode");
-            Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("unknown mode: {unknown}")),
-            }).unwrap())
+            Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("unknown mode: {unknown}")),
+                })
+                .unwrap(),
+            )
         }
     }
 }
@@ -136,10 +142,13 @@ async fn handle_addfile(
     multipart: Option<Multipart>,
 ) -> Json<serde_json::Value> {
     let Some(mut multipart) = multipart else {
-        return Json(serde_json::to_value(SimpleResponse {
-            status: false,
-            error: Some("multipart body required for addfile".to_string()),
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: false,
+                error: Some("multipart body required for addfile".to_string()),
+            })
+            .unwrap(),
+        );
     };
 
     // Extract the NZB file from multipart fields.
@@ -154,10 +163,13 @@ async fn handle_addfile(
                 Ok(bytes) => nzb_data = Some(bytes.to_vec()),
                 Err(e) => {
                     warn!(error = %e, "failed to read multipart field");
-                    return Json(serde_json::to_value(SimpleResponse {
-                        status: false,
-                        error: Some(format!("failed to read upload: {e}")),
-                    }).unwrap());
+                    return Json(
+                        serde_json::to_value(SimpleResponse {
+                            status: false,
+                            error: Some(format!("failed to read upload: {e}")),
+                        })
+                        .unwrap(),
+                    );
                 }
             }
             break;
@@ -165,10 +177,13 @@ async fn handle_addfile(
     }
 
     let Some(data) = nzb_data else {
-        return Json(serde_json::to_value(SimpleResponse {
-            status: false,
-            error: Some("no NZB file found in upload".to_string()),
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: false,
+                error: Some("no NZB file found in upload".to_string()),
+            })
+            .unwrap(),
+        );
     };
 
     let filename = nzb_filename.unwrap_or_else(|| "unknown.nzb".to_string());
@@ -179,10 +194,7 @@ async fn handle_addfile(
 }
 
 /// Handle `mode=addurl` -- fetch NZB from a URL and enqueue it.
-async fn handle_addurl(
-    state: AppState,
-    params: ApiParams,
-) -> Json<serde_json::Value> {
+async fn handle_addurl(state: AppState, params: ApiParams) -> Json<serde_json::Value> {
     let Some(url) = params.name.or(params.value) else {
         return Json(
             serde_json::to_value(SimpleResponse {
@@ -326,10 +338,7 @@ fn enqueue_nzb(
 }
 
 /// Handle `mode=queue` -- list queue or delete item.
-fn handle_queue(
-    state: AppState,
-    params: ApiParams,
-) -> Json<serde_json::Value> {
+fn handle_queue(state: AppState, params: ApiParams) -> Json<serde_json::Value> {
     let conn = state.db.lock();
 
     // Delete action.
@@ -338,24 +347,33 @@ fn handle_queue(
             let id = match Uuid::parse_str(value) {
                 Ok(id) => id,
                 Err(_) => {
-                    return Json(serde_json::to_value(SimpleResponse {
-                        status: false,
-                        error: Some("invalid id".to_string()),
-                    }).unwrap());
+                    return Json(
+                        serde_json::to_value(SimpleResponse {
+                            status: false,
+                            error: Some("invalid id".to_string()),
+                        })
+                        .unwrap(),
+                    );
                 }
             };
             if let Err(e) = queue_items::delete(&conn, id) {
                 warn!(error = %e, %id, "failed to delete queue item");
-                return Json(serde_json::to_value(SimpleResponse {
-                    status: false,
-                    error: Some(format!("database error: {e}")),
-                }).unwrap());
+                return Json(
+                    serde_json::to_value(SimpleResponse {
+                        status: false,
+                        error: Some(format!("database error: {e}")),
+                    })
+                    .unwrap(),
+                );
             }
         }
-        return Json(serde_json::to_value(SimpleResponse {
-            status: true,
-            error: None,
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: true,
+                error: None,
+            })
+            .unwrap(),
+        );
     }
 
     // List queue with pagination.
@@ -363,10 +381,13 @@ fn handle_queue(
         Ok(c) => c as usize,
         Err(e) => {
             warn!(error = %e, "failed to count queue");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("database error: {e}")),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("database error: {e}")),
+                })
+                .unwrap(),
+            );
         }
     };
     let offset = params.start.unwrap_or(0);
@@ -375,10 +396,13 @@ fn handle_queue(
         Ok(items) => items,
         Err(e) => {
             warn!(error = %e, "failed to list queue");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("database error: {e}")),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("database error: {e}")),
+                })
+                .unwrap(),
+            );
         }
     };
     let qs = state.queue_status.borrow();
@@ -430,10 +454,7 @@ fn handle_queue(
 }
 
 /// Handle `mode=history` -- list history or delete item.
-fn handle_history(
-    state: AppState,
-    params: ApiParams,
-) -> Json<serde_json::Value> {
+fn handle_history(state: AppState, params: ApiParams) -> Json<serde_json::Value> {
     let conn = state.db.lock();
 
     // Delete action.
@@ -442,34 +463,46 @@ fn handle_history(
             if value == "all" {
                 if let Err(e) = history_items::delete_all(&conn) {
                     warn!(error = %e, "failed to clear history");
-                    return Json(serde_json::to_value(SimpleResponse {
-                        status: false,
-                        error: Some(format!("database error: {e}")),
-                    }).unwrap());
+                    return Json(
+                        serde_json::to_value(SimpleResponse {
+                            status: false,
+                            error: Some(format!("database error: {e}")),
+                        })
+                        .unwrap(),
+                    );
                 }
             } else {
                 let id = match Uuid::parse_str(value) {
                     Ok(id) => id,
                     Err(_) => {
-                        return Json(serde_json::to_value(SimpleResponse {
-                            status: false,
-                            error: Some("invalid id".to_string()),
-                        }).unwrap());
+                        return Json(
+                            serde_json::to_value(SimpleResponse {
+                                status: false,
+                                error: Some("invalid id".to_string()),
+                            })
+                            .unwrap(),
+                        );
                     }
                 };
                 if let Err(e) = history_items::delete(&conn, id) {
                     warn!(error = %e, %id, "failed to delete history item");
-                    return Json(serde_json::to_value(SimpleResponse {
-                        status: false,
-                        error: Some(format!("database error: {e}")),
-                    }).unwrap());
+                    return Json(
+                        serde_json::to_value(SimpleResponse {
+                            status: false,
+                            error: Some(format!("database error: {e}")),
+                        })
+                        .unwrap(),
+                    );
                 }
             }
         }
-        return Json(serde_json::to_value(SimpleResponse {
-            status: true,
-            error: None,
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: true,
+                error: None,
+            })
+            .unwrap(),
+        );
     }
 
     // List history with pagination.
@@ -479,20 +512,26 @@ fn handle_history(
         Ok(items) => items,
         Err(e) => {
             warn!(error = %e, "failed to list history");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("database error: {e}")),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("database error: {e}")),
+                })
+                .unwrap(),
+            );
         }
     };
     let total = match history_items::count(&conn) {
         Ok(c) => c as usize,
         Err(e) => {
             warn!(error = %e, "failed to count history");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("database error: {e}")),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("database error: {e}")),
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -522,33 +561,39 @@ fn handle_history(
         })
         .collect();
 
-    Json(serde_json::to_value(HistoryResponse {
-        history: HistoryData {
-            noofslots: total,
-            slots,
-        },
-    }).unwrap())
+    Json(
+        serde_json::to_value(HistoryResponse {
+            history: HistoryData {
+                noofslots: total,
+                slots,
+            },
+        })
+        .unwrap(),
+    )
 }
 
 /// Handle `mode=retry` -- re-queue a history item.
-fn handle_retry(
-    state: AppState,
-    params: ApiParams,
-) -> Json<serde_json::Value> {
+fn handle_retry(state: AppState, params: ApiParams) -> Json<serde_json::Value> {
     let Some(value) = &params.value else {
-        return Json(serde_json::to_value(SimpleResponse {
-            status: false,
-            error: Some("value parameter (nzo_id) is required".to_string()),
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: false,
+                error: Some("value parameter (nzo_id) is required".to_string()),
+            })
+            .unwrap(),
+        );
     };
 
     let id = match Uuid::parse_str(value) {
         Ok(id) => id,
         Err(_) => {
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some("invalid id".to_string()),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some("invalid id".to_string()),
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -563,10 +608,13 @@ pub async fn rest_retry_history(
     let id = match Uuid::parse_str(&id) {
         Ok(id) => id,
         Err(_) => {
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some("invalid id".to_string()),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some("invalid id".to_string()),
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -580,27 +628,36 @@ fn retry_history_item(state: &AppState, id: Uuid) -> Json<serde_json::Value> {
     let history_item = match history_items::get_by_id(&conn, id) {
         Ok(Some(item)) => item,
         Ok(None) => {
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some("history item not found".to_string()),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some("history item not found".to_string()),
+                })
+                .unwrap(),
+            );
         }
         Err(e) => {
             warn!(error = %e, %id, "failed to look up history item");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some(format!("database error: {e}")),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(format!("database error: {e}")),
+                })
+                .unwrap(),
+            );
         }
     };
 
     let blob_id = match history_item.nzb_blob_id {
         Some(bid) => bid,
         None => {
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some("NZB blob not available for this history item".to_string()),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some("NZB blob not available for this history item".to_string()),
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -608,10 +665,15 @@ fn retry_history_item(state: &AppState, id: Uuid) -> Json<serde_json::Value> {
         Ok(data) => data,
         Err(e) => {
             warn!(error = %e, %blob_id, "NZB blob missing for retry");
-            return Json(serde_json::to_value(SimpleResponse {
-                status: false,
-                error: Some("NZB blob has been cleaned up and is no longer available".to_string()),
-            }).unwrap());
+            return Json(
+                serde_json::to_value(SimpleResponse {
+                    status: false,
+                    error: Some(
+                        "NZB blob has been cleaned up and is no longer available".to_string(),
+                    ),
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -631,18 +693,24 @@ fn retry_history_item(state: &AppState, id: Uuid) -> Json<serde_json::Value> {
 
     if let Err(e) = BlobStore::put_nzb_blob(&conn, new_id, &nzb_data) {
         warn!(error = %e, "failed to store NZB blob for retry");
-        return Json(serde_json::to_value(SimpleResponse {
-            status: false,
-            error: Some(format!("failed to store NZB: {e}")),
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: false,
+                error: Some(format!("failed to store NZB: {e}")),
+            })
+            .unwrap(),
+        );
     }
 
     if let Err(e) = queue_items::insert(&conn, &queue_item) {
         warn!(error = %e, "failed to insert retried queue item");
-        return Json(serde_json::to_value(SimpleResponse {
-            status: false,
-            error: Some(format!("failed to enqueue: {e}")),
-        }).unwrap());
+        return Json(
+            serde_json::to_value(SimpleResponse {
+                status: false,
+                error: Some(format!("failed to enqueue: {e}")),
+            })
+            .unwrap(),
+        );
     }
 
     if let Err(e) = history_items::delete(&conn, id) {
@@ -679,10 +747,10 @@ fn priority_to_string(priority: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
     use axum::body::Body;
     use axum::http::Request;
     use axum::routing::{get, post};
-    use axum::Router;
     use std::sync::Arc;
     use tower::ServiceExt;
 
@@ -692,7 +760,8 @@ mod tests {
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
-        let (_, queue_status) = tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
+        let (_, queue_status) =
+            tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
         AppState {
             db,
             config,
@@ -716,7 +785,9 @@ mod tests {
             .oneshot(Request::get(uri).body(Body::empty()).unwrap())
             .await
             .unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         serde_json::from_slice(&body).unwrap()
     }
 
@@ -796,7 +867,9 @@ mod tests {
             )
             .await
             .unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["status"], false);
         assert!(v["error"].as_str().unwrap().contains("multipart"));
@@ -815,9 +888,7 @@ mod tests {
     #[tokio::test]
     async fn test_queue_delete_nonexistent_returns_success() {
         let random_id = Uuid::new_v4();
-        let v = get_json(&format!(
-            "/api?mode=queue&name=delete&value={random_id}"
-        )).await;
+        let v = get_json(&format!("/api?mode=queue&name=delete&value={random_id}")).await;
         assert_eq!(v["status"], true);
         assert!(v.get("error").is_none() || v["error"].is_null());
     }
@@ -832,9 +903,7 @@ mod tests {
     #[tokio::test]
     async fn test_history_delete_nonexistent_returns_success() {
         let random_id = Uuid::new_v4();
-        let v = get_json(&format!(
-            "/api?mode=history&name=delete&value={random_id}"
-        )).await;
+        let v = get_json(&format!("/api?mode=history&name=delete&value={random_id}")).await;
         assert_eq!(v["status"], true);
         assert!(v.get("error").is_none() || v["error"].is_null());
     }
@@ -863,9 +932,7 @@ mod tests {
     #[tokio::test]
     async fn test_retry_nonexistent_history_item() {
         let random_id = Uuid::new_v4();
-        let v = get_json(&format!(
-            "/api?mode=retry&value={random_id}"
-        )).await;
+        let v = get_json(&format!("/api?mode=retry&value={random_id}")).await;
         assert_eq!(v["status"], false);
         assert!(v["error"].as_str().unwrap().contains("not found"));
     }

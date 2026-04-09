@@ -12,7 +12,9 @@ use uuid::Uuid;
 use nzbdav_core::blob_store::BlobStore;
 use nzbdav_core::models::{DavItem, DavMultipartFile, DavNzbFile, ItemSubType, ItemType};
 use nzbdav_core::{dav_items, dav_items::get_by_path, queue_items};
-use nzbdav_stream::{AesDecoderStream, DavMultipartFileStream, NzbFileStream, UsenetArticleProvider};
+use nzbdav_stream::{
+    AesDecoderStream, DavMultipartFileStream, NzbFileStream, UsenetArticleProvider,
+};
 
 use crate::error::{DavServerError, Result};
 
@@ -174,8 +176,7 @@ impl DatabaseStore {
 
                 if let Some(aes) = meta.aes_params {
                     let decoded_size = aes.decoded_size as u64;
-                    let aes_stream =
-                        AesDecoderStream::new(stream, &aes.key, &aes.iv, decoded_size);
+                    let aes_stream = AesDecoderStream::new(stream, &aes.key, &aes.iv, decoded_size);
                     Ok(Body::from_stream(ReaderStream::new(aes_stream)))
                 } else {
                     Ok(Body::from_stream(ReaderStream::new(stream)))
@@ -321,12 +322,13 @@ impl DatabaseStore {
     /// Move (rename) an item from one path to another.
     pub fn move_item(&self, from: &str, to: &str) -> Result<()> {
         let conn = self.db.lock();
-        let item = get_by_path(&conn, from)?
-            .ok_or_else(|| DavServerError::NotFound(from.into()))?;
+        let item =
+            get_by_path(&conn, from)?.ok_or_else(|| DavServerError::NotFound(from.into()))?;
 
         let (new_parent_path, new_name) = split_path(to);
-        let new_parent = get_by_path(&conn, new_parent_path)?
-            .ok_or_else(|| DavServerError::Conflict(format!("dest parent not found: {new_parent_path}")))?;
+        let new_parent = get_by_path(&conn, new_parent_path)?.ok_or_else(|| {
+            DavServerError::Conflict(format!("dest parent not found: {new_parent_path}"))
+        })?;
 
         // Delete anything already at the destination.
         if let Some(existing) = get_by_path(&conn, to)? {
@@ -335,12 +337,7 @@ impl DatabaseStore {
 
         conn.execute(
             "UPDATE dav_items SET name = ?1, path = ?2, parent_id = ?3 WHERE id = ?4",
-            rusqlite::params![
-                new_name,
-                to,
-                new_parent.id.to_string(),
-                item.id.to_string()
-            ],
+            rusqlite::params![new_name, to, new_parent.id.to_string(), item.id.to_string()],
         )
         .map_err(nzbdav_core::error::DavError::Database)?;
 
@@ -351,12 +348,13 @@ impl DatabaseStore {
     /// Copy an item from one path to another (shallow copy — same blob refs).
     pub fn copy_item(&self, from: &str, to: &str) -> Result<()> {
         let conn = self.db.lock();
-        let source = get_by_path(&conn, from)?
-            .ok_or_else(|| DavServerError::NotFound(from.into()))?;
+        let source =
+            get_by_path(&conn, from)?.ok_or_else(|| DavServerError::NotFound(from.into()))?;
 
         let (new_parent_path, new_name) = split_path(to);
-        let new_parent = get_by_path(&conn, new_parent_path)?
-            .ok_or_else(|| DavServerError::Conflict(format!("dest parent not found: {new_parent_path}")))?;
+        let new_parent = get_by_path(&conn, new_parent_path)?.ok_or_else(|| {
+            DavServerError::Conflict(format!("dest parent not found: {new_parent_path}"))
+        })?;
 
         // Delete anything already at the destination.
         if let Some(existing) = get_by_path(&conn, to)? {
@@ -462,7 +460,10 @@ mod tests {
         assert!(node.is_some(), "root node should exist after seeding");
         let node = node.unwrap();
         assert!(node.is_collection);
-        assert_eq!(node.item.sub_type, nzbdav_core::models::ItemSubType::WebdavRoot);
+        assert_eq!(
+            node.item.sub_type,
+            nzbdav_core::models::ItemSubType::WebdavRoot
+        );
     }
 
     #[test]
@@ -578,7 +579,11 @@ mod tests {
         // Queue item should be gone
         {
             let conn = db.lock();
-            assert!(nzbdav_core::queue_items::get_by_id(&conn, qi.id).unwrap().is_none());
+            assert!(
+                nzbdav_core::queue_items::get_by_id(&conn, qi.id)
+                    .unwrap()
+                    .is_none()
+            );
         }
 
         // Node should no longer resolve
@@ -592,7 +597,10 @@ mod tests {
         assert!(node.is_some(), "README.txt should exist in /content/");
         let node = node.unwrap();
         assert!(!node.is_collection);
-        assert_eq!(node.item.sub_type, nzbdav_core::models::ItemSubType::ReadmeFile);
+        assert_eq!(
+            node.item.sub_type,
+            nzbdav_core::models::ItemSubType::ReadmeFile
+        );
         assert!(node.item.nzb_blob_id.is_some());
     }
 
@@ -604,7 +612,10 @@ mod tests {
         let children = store.list_children("/content/").unwrap();
         // README.txt + movies directory
         assert_eq!(children.len(), 2);
-        let movies = children.iter().find(|c| c.item.name == "movies").expect("movies dir");
+        let movies = children
+            .iter()
+            .find(|c| c.item.name == "movies")
+            .expect("movies dir");
         assert!(movies.is_collection);
 
         // Verify via get_node too

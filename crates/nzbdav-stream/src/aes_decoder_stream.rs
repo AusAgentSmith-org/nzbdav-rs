@@ -46,15 +46,9 @@ enum SeekState {
     /// No seek in progress.
     Idle,
     /// Need to seek the inner stream to read the previous block for IV.
-    NeedPrevBlock {
-        target: u64,
-        block_index: u64,
-    },
+    NeedPrevBlock { target: u64, block_index: u64 },
     /// Waiting for inner seek to the prev-block position to complete.
-    SeekingToPrevBlock {
-        target: u64,
-        block_index: u64,
-    },
+    SeekingToPrevBlock { target: u64, block_index: u64 },
     /// Reading the 16-byte previous-block ciphertext for the new IV.
     ReadingPrevBlock {
         target: u64,
@@ -63,9 +57,7 @@ enum SeekState {
         filled: usize,
     },
     /// Need to seek inner stream to the target block position.
-    SeekingToTarget {
-        target: u64,
-    },
+    SeekingToTarget { target: u64 },
 }
 
 impl<S: AsyncRead + AsyncSeek + Unpin> AesDecoderStream<S> {
@@ -244,17 +236,13 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AsyncSeek for AesDecoderStream<S> {
                 target,
                 block_index,
             };
-            Pin::new(&mut self.inner)
-                .start_seek(SeekFrom::Start(prev_block_pos))?;
+            Pin::new(&mut self.inner).start_seek(SeekFrom::Start(prev_block_pos))?;
         }
 
         Ok(())
     }
 
-    fn poll_complete(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<u64>> {
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
         loop {
             match std::mem::replace(&mut self.seek_state, SeekState::Idle) {
                 SeekState::Idle => {
@@ -283,27 +271,25 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AsyncSeek for AesDecoderStream<S> {
                 SeekState::SeekingToPrevBlock {
                     target,
                     block_index,
-                } => {
-                    match Pin::new(&mut self.inner).poll_complete(cx) {
-                        Poll::Ready(Ok(_)) => {
-                            self.seek_state = SeekState::ReadingPrevBlock {
-                                target,
-                                block_index,
-                                buf: [0u8; AES_BLOCK_SIZE],
-                                filled: 0,
-                            };
-                            continue;
-                        }
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                        Poll::Pending => {
-                            self.seek_state = SeekState::SeekingToPrevBlock {
-                                target,
-                                block_index,
-                            };
-                            return Poll::Pending;
-                        }
+                } => match Pin::new(&mut self.inner).poll_complete(cx) {
+                    Poll::Ready(Ok(_)) => {
+                        self.seek_state = SeekState::ReadingPrevBlock {
+                            target,
+                            block_index,
+                            buf: [0u8; AES_BLOCK_SIZE],
+                            filled: 0,
+                        };
+                        continue;
                     }
-                }
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                    Poll::Pending => {
+                        self.seek_state = SeekState::SeekingToPrevBlock {
+                            target,
+                            block_index,
+                        };
+                        return Poll::Pending;
+                    }
+                },
 
                 SeekState::ReadingPrevBlock {
                     target,
@@ -339,8 +325,7 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AsyncSeek for AesDecoderStream<S> {
                             self.iv = buf;
 
                             // Now seek inner to the target block position.
-                            let target_block_pos =
-                                block_index * AES_BLOCK_SIZE as u64;
+                            let target_block_pos = block_index * AES_BLOCK_SIZE as u64;
                             self.seek_state = SeekState::SeekingToTarget { target };
                             match Pin::new(&mut self.inner)
                                 .start_seek(SeekFrom::Start(target_block_pos))
@@ -360,7 +345,6 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AsyncSeek for AesDecoderStream<S> {
                             return Poll::Pending;
                         }
                     }
-
                 }
 
                 SeekState::SeekingToTarget { target } => {

@@ -9,7 +9,7 @@
 pub mod aggregators;
 pub mod deobfuscation;
 pub mod error;
-pub mod processors;
-pub mod types;
 pub mod post_processors;
+pub mod processors;
 pub mod queue_item_processor;
+pub mod types;

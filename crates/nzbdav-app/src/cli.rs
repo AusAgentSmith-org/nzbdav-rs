@@ -1,7 +1,10 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "nzbdav-rs", about = "Usenet virtual filesystem with WebDAV serving")]
+#[command(
+    name = "nzbdav-rs",
+    about = "Usenet virtual filesystem with WebDAV serving"
+)]
 pub struct Cli {
     /// Path to the SQLite database file
     #[arg(long, default_value = "nzbdav.db", env = "NZBDAV_DB")]

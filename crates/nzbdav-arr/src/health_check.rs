@@ -91,7 +91,10 @@ impl HealthCheckService {
             return Ok(());
         }
 
-        info!(count = items.len(), "checking items for article availability");
+        info!(
+            count = items.len(),
+            "checking items for article availability"
+        );
 
         for item in &items {
             if self.cancel.is_cancelled() {
@@ -179,9 +182,7 @@ impl HealthCheckService {
                 Ok(true) => {}
                 Ok(false) => missing += 1,
                 Err(e) => {
-                    return HealthCheckOutcome::Error(format!(
-                        "STAT failed for {seg_id}: {e}"
-                    ));
+                    return HealthCheckOutcome::Error(format!("STAT failed for {seg_id}: {e}"));
                 }
             }
         }
@@ -205,9 +206,8 @@ impl HealthCheckService {
             "id, id_prefix, created_at, parent_id, name, file_size, type, sub_type, path, release_date, last_health_check, next_health_check, history_item_id, file_blob_id, nzb_blob_id"
         );
         let result = db.prepare(&sql).and_then(|mut stmt| {
-            let rows = stmt.query_map(
-                rusqlite::params![ItemType::UsenetFile as i32, now],
-                |row| {
+            let rows =
+                stmt.query_map(rusqlite::params![ItemType::UsenetFile as i32, now], |row| {
                     // Re-use the same row mapping pattern as dav_items module
                     let id: String = row.get("id")?;
                     let parent_id: Option<String> = row.get("parent_id")?;
@@ -277,18 +277,13 @@ impl HealthCheckService {
                         })?,
                         path: row.get("path")?,
                         release_date: release_date_str.map(parse_rfc3339).transpose()?,
-                        last_health_check: last_health_check_str
-                            .map(parse_rfc3339)
-                            .transpose()?,
-                        next_health_check: next_health_check_str
-                            .map(parse_rfc3339)
-                            .transpose()?,
+                        last_health_check: last_health_check_str.map(parse_rfc3339).transpose()?,
+                        next_health_check: next_health_check_str.map(parse_rfc3339).transpose()?,
                         history_item_id: history_item_id.map(parse_uuid).transpose()?,
                         file_blob_id: file_blob_id.map(parse_uuid).transpose()?,
                         nzb_blob_id: nzb_blob_id.map(parse_uuid).transpose()?,
                     })
-                },
-            )?;
+                })?;
             let mut items = Vec::new();
             for row in rows {
                 match row {

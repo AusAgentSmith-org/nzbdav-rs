@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -206,7 +206,10 @@ pub async fn copy(State(store): State<DavState>, req: Request) -> Response {
 pub async fn options() -> Response {
     Response::builder()
         .status(StatusCode::OK)
-        .header("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, MOVE, COPY")
+        .header(
+            "Allow",
+            "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, MKCOL, MOVE, COPY",
+        )
         .header("DAV", "1, 2")
         .header(header::CONTENT_LENGTH, "0")
         .body(Body::empty())
@@ -248,7 +251,9 @@ async fn serve_streaming(
                     nzbdav_core::blob_store::BlobStore::get_file_blob(&conn, blob_id)
                 };
                 if let Ok(blob_data) = blob_data {
-                    if let Ok(meta) = bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data) {
+                    if let Ok(meta) =
+                        bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
+                    {
                         let mut stream = nzbdav_stream::SeekableSegmentStream::new(
                             store.provider(),
                             meta.segment_ids,
@@ -262,7 +267,8 @@ async fn serve_streaming(
                             // the right position and streams to EOF. No Content-Length
                             // since the decoded byte count is approximate.
                             let body = Body::from_stream(ReaderStream::new(stream));
-                            let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
+                            let content_range =
+                                format!("bytes {}-{}/{file_size}", range.start, range.end);
                             return Response::builder()
                                 .status(StatusCode::PARTIAL_CONTENT)
                                 .header(header::CONTENT_TYPE, &node.content_type)
@@ -291,8 +297,7 @@ async fn serve_streaming(
         }
         match build_ranged_body(store, node, &range).await {
             Ok(ranged_body) => {
-                let content_range =
-                    format!("bytes {}-{}/{file_size}", range.start, range.end);
+                let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
                 Response::builder()
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, &node.content_type)
@@ -342,10 +347,8 @@ async fn build_ranged_body(
 
     match node.item.sub_type {
         ItemSubType::MultipartFile => {
-            let meta: nzbdav_core::models::DavMultipartFile =
-                bincode::deserialize(&blob_data).map_err(|e| {
-                    DavServerError::Other(format!("deserialize error: {e}"))
-                })?;
+            let meta: nzbdav_core::models::DavMultipartFile = bincode::deserialize(&blob_data)
+                .map_err(|e| DavServerError::Other(format!("deserialize error: {e}")))?;
 
             let mut stream = nzbdav_stream::DavMultipartFileStream::new(
                 store.provider(),
@@ -374,10 +377,8 @@ async fn build_ranged_body(
             }
         }
         ItemSubType::NzbFile => {
-            let meta: nzbdav_core::models::DavNzbFile =
-                bincode::deserialize(&blob_data).map_err(|e| {
-                    DavServerError::Other(format!("deserialize error: {e}"))
-                })?;
+            let meta: nzbdav_core::models::DavNzbFile = bincode::deserialize(&blob_data)
+                .map_err(|e| DavServerError::Other(format!("deserialize error: {e}")))?;
 
             let mut stream = nzbdav_stream::NzbFileStream::new(
                 store.provider(),
@@ -436,9 +437,7 @@ fn extract_destination(req: &Request) -> Option<String> {
 
 /// Percent-decode a URI path.
 fn decode_path(path: &str) -> String {
-    percent_decode_str(path)
-        .decode_utf8_lossy()
-        .into_owned()
+    percent_decode_str(path).decode_utf8_lossy().into_owned()
 }
 
 /// Map a `DavServerError` to an HTTP response.

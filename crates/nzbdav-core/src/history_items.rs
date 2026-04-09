@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -13,19 +13,28 @@ fn row_to_history_item(row: &Row) -> rusqlite::Result<HistoryItem> {
     let nzb_blob_id: Option<String> = row.get("nzb_blob_id")?;
 
     let parse_uuid = |s: String| -> rusqlite::Result<Uuid> {
-        Uuid::parse_str(&s)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
+        Uuid::parse_str(&s).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })
     };
 
     Ok(HistoryItem {
         id: parse_uuid(id)?,
-        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
+        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S").map_err(
+            |e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            },
+        )?,
         file_name: row.get("file_name")?,
         job_name: row.get("job_name")?,
         category: row.get("category")?,
-        download_status: DownloadStatus::try_from(status_i)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into()))?,
+        download_status: DownloadStatus::try_from(status_i).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Integer, e.into())
+        })?,
         total_segment_bytes: row.get("total_segment_bytes")?,
         download_time_seconds: row.get("download_time_seconds")?,
         fail_message: row.get("fail_message")?,
@@ -38,7 +47,9 @@ const COLUMNS: &str = "id, created_at, file_name, job_name, category, download_s
 
 pub fn insert(conn: &Connection, item: &HistoryItem) -> Result<()> {
     conn.execute(
-        &format!("INSERT INTO history_items ({COLUMNS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)"),
+        &format!(
+            "INSERT INTO history_items ({COLUMNS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)"
+        ),
         params![
             item.id.to_string(),
             item.created_at.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -57,7 +68,9 @@ pub fn insert(conn: &Connection, item: &HistoryItem) -> Result<()> {
 }
 
 pub fn get_by_id(conn: &Connection, id: Uuid) -> Result<Option<HistoryItem>> {
-    let mut stmt = conn.prepare(&format!("SELECT {COLUMNS} FROM history_items WHERE id = ?1"))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM history_items WHERE id = ?1"
+    ))?;
     let mut rows = stmt.query_map(params![id.to_string()], row_to_history_item)?;
     match rows.next() {
         Some(row) => Ok(Some(row?)),

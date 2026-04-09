@@ -58,10 +58,16 @@ impl SeekableSegmentStream {
     async fn find_segment(&self, target_byte: u64) -> std::io::Result<FoundSegment> {
         let n = self.segment_ids.len() as i64;
         if n == 0 {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "no segments"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "no segments",
+            ));
         }
         if target_byte == 0 {
-            return Ok(FoundSegment { index: 0, start_byte: 0 });
+            return Ok(FoundSegment {
+                index: 0,
+                start_byte: 0,
+            });
         }
 
         let mut lo_idx: i64 = 0;
@@ -155,11 +161,7 @@ impl SeekableSegmentStream {
 
         // For position 0, just create the stream directly (no search needed)
         if target == 0 {
-            self.inner = Some(MultiSegmentStream::new(
-                provider,
-                segment_ids,
-                lookahead,
-            ));
+            self.inner = Some(MultiSegmentStream::new(provider, segment_ids, lookahead));
             self.discard_bytes = 0;
             self.needs_resolve = false;
             return;
@@ -188,9 +190,7 @@ impl SeekableSegmentStream {
 
         debug!(
             target,
-            est_idx,
-            segs_needed,
-            "seek: creating stream at estimated segment"
+            est_idx, segs_needed, "seek: creating stream at estimated segment"
         );
 
         let remaining = segment_ids[est_idx..].to_vec();

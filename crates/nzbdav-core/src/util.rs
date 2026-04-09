@@ -128,7 +128,9 @@ mod tests {
     #[test]
     fn test_is_probably_obfuscated() {
         // 32-char hex hash
-        assert!(is_probably_obfuscated("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4.mkv"));
+        assert!(is_probably_obfuscated(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4.mkv"
+        ));
         // UUID
         assert!(is_probably_obfuscated(
             "550e8400-e29b-41d4-a716-446655440000.mkv"
@@ -143,10 +145,7 @@ mod tests {
     #[test]
     fn test_get_job_name() {
         assert_eq!(get_job_name("release.nzb"), "release");
-        assert_eq!(
-            get_job_name("release {{password}}.nzb"),
-            "release"
-        );
+        assert_eq!(get_job_name("release {{password}}.nzb"), "release");
         assert_eq!(get_job_name("file.nzb.gz"), "file");
         assert_eq!(get_job_name("noext"), "noext");
     }

@@ -2,19 +2,17 @@
 
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Router;
 
 use crate::handler;
 use crate::store::DatabaseStore;
 
 /// Build the WebDAV router. Mount at `/` or wherever WebDAV should serve.
 pub fn dav_router(store: Arc<DatabaseStore>) -> Router {
-    Router::new()
-        .fallback(dav_handler)
-        .with_state(store)
+    Router::new().fallback(dav_handler).with_state(store)
 }
 
 /// Single handler that dispatches by HTTP method.

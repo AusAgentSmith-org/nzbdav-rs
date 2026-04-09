@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row, params};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -11,10 +11,18 @@ fn row_to_queue_item(row: &Row) -> rusqlite::Result<QueueItem> {
     let pause_until_str: Option<String> = row.get("pause_until")?;
 
     Ok(QueueItem {
-        id: Uuid::parse_str(&id)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
-        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S")
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
+        id: Uuid::parse_str(&id).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        created_at: NaiveDateTime::parse_from_str(&created_at_str, "%Y-%m-%d %H:%M:%S").map_err(
+            |e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            },
+        )?,
         file_name: row.get("file_name")?,
         job_name: row.get("job_name")?,
         nzb_file_size: row.get("nzb_file_size")?,
@@ -25,7 +33,13 @@ fn row_to_queue_item(row: &Row) -> rusqlite::Result<QueueItem> {
         pause_until: pause_until_str
             .map(|s| NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S"))
             .transpose()
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
     })
 }
 
@@ -44,7 +58,8 @@ pub fn insert(conn: &Connection, item: &QueueItem) -> Result<()> {
             item.category,
             item.priority,
             item.post_processing,
-            item.pause_until.map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()),
+            item.pause_until
+                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string()),
         ],
     )?;
     Ok(())
@@ -77,7 +92,11 @@ pub fn get_next_excluding(conn: &Connection, exclude_ids: &[Uuid]) -> Result<Opt
     if exclude_ids.is_empty() {
         return get_next(conn);
     }
-    let placeholders: Vec<String> = exclude_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+    let placeholders: Vec<String> = exclude_ids
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("?{}", i + 1))
+        .collect();
     let sql = format!(
         "SELECT {COLUMNS} FROM queue_items \
          WHERE (pause_until IS NULL OR pause_until <= datetime('now')) \
@@ -88,7 +107,10 @@ pub fn get_next_excluding(conn: &Connection, exclude_ids: &[Uuid]) -> Result<Opt
     );
     let mut stmt = conn.prepare(&sql)?;
     let id_strings: Vec<String> = exclude_ids.iter().map(|id| id.to_string()).collect();
-    let params: Vec<&dyn rusqlite::ToSql> = id_strings.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let params: Vec<&dyn rusqlite::ToSql> = id_strings
+        .iter()
+        .map(|s| s as &dyn rusqlite::ToSql)
+        .collect();
     let mut rows = stmt.query_map(params.as_slice(), row_to_queue_item)?;
     match rows.next() {
         Some(row) => Ok(Some(row?)),
@@ -195,9 +217,7 @@ mod tests {
     fn test_get_next_skips_paused() {
         let conn = open_in_memory().unwrap();
         let mut paused = make_queue_item(10);
-        paused.pause_until = Some(
-            Utc::now().naive_utc() + chrono::Duration::hours(1),
-        );
+        paused.pause_until = Some(Utc::now().naive_utc() + chrono::Duration::hours(1));
         let ready = make_queue_item(0);
         insert(&conn, &paused).unwrap();
         insert(&conn, &ready).unwrap();
@@ -272,7 +292,11 @@ mod tests {
         assert_eq!(next.id, low.id);
 
         // Excluding both should return None
-        assert!(get_next_excluding(&conn, &[high.id, low.id]).unwrap().is_none());
+        assert!(
+            get_next_excluding(&conn, &[high.id, low.id])
+                .unwrap()
+                .is_none()
+        );
 
         // Empty exclusion list should behave like get_next
         let next = get_next_excluding(&conn, &[]).unwrap().unwrap();

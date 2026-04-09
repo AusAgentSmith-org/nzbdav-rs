@@ -9,8 +9,7 @@ use crate::models::{DavItem, ItemSubType, ItemType};
 
 /// Namespace UUID for deterministic v5 IDs (generated once, stable forever).
 const NAMESPACE: Uuid = Uuid::from_bytes([
-    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30,
-    0xc8,
+    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
 ]);
 
 const CONTENT_README: &str = "\
@@ -74,7 +73,11 @@ pub fn seed_root_items(conn: &Connection) -> Result<()> {
     let children = [
         ("nzbs", "/nzbs/", ItemSubType::NzbsRoot),
         ("content", "/content/", ItemSubType::ContentRoot),
-        ("completed-symlinks", "/completed-symlinks/", ItemSubType::SymlinkRoot),
+        (
+            "completed-symlinks",
+            "/completed-symlinks/",
+            ItemSubType::SymlinkRoot,
+        ),
         (".ids", "/.ids/", ItemSubType::IdsRoot),
     ];
 
@@ -141,22 +144,30 @@ mod tests {
         let content = dav_items::get_by_path(&conn, "/content/").unwrap().unwrap();
         assert_eq!(content.sub_type, ItemSubType::ContentRoot);
 
-        let symlinks = dav_items::get_by_path(&conn, "/completed-symlinks/").unwrap().unwrap();
+        let symlinks = dav_items::get_by_path(&conn, "/completed-symlinks/")
+            .unwrap()
+            .unwrap();
         assert_eq!(symlinks.sub_type, ItemSubType::SymlinkRoot);
 
         let ids = dav_items::get_by_path(&conn, "/.ids/").unwrap().unwrap();
         assert_eq!(ids.sub_type, ItemSubType::IdsRoot);
 
         // README files should exist in content, nzbs, and .ids directories.
-        let content_readme = dav_items::get_by_path(&conn, "/content/README.txt").unwrap().unwrap();
+        let content_readme = dav_items::get_by_path(&conn, "/content/README.txt")
+            .unwrap()
+            .unwrap();
         assert_eq!(content_readme.sub_type, ItemSubType::ReadmeFile);
         assert!(content_readme.nzb_blob_id.is_some());
         assert!(content_readme.file_size.unwrap() > 0);
 
-        let nzbs_readme = dav_items::get_by_path(&conn, "/nzbs/README.txt").unwrap().unwrap();
+        let nzbs_readme = dav_items::get_by_path(&conn, "/nzbs/README.txt")
+            .unwrap()
+            .unwrap();
         assert_eq!(nzbs_readme.sub_type, ItemSubType::ReadmeFile);
 
-        let ids_readme = dav_items::get_by_path(&conn, "/.ids/README.txt").unwrap().unwrap();
+        let ids_readme = dav_items::get_by_path(&conn, "/.ids/README.txt")
+            .unwrap()
+            .unwrap();
         assert_eq!(ids_readme.sub_type, ItemSubType::ReadmeFile);
     }
 

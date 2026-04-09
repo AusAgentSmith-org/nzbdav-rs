@@ -40,7 +40,10 @@ fn serve_file(path: &str) -> Response {
                 StatusCode::OK,
                 [
                     (header::CONTENT_TYPE, mime.as_ref().to_string()),
-                    (header::CACHE_CONTROL, "no-cache, no-store, must-revalidate".to_string()),
+                    (
+                        header::CACHE_CONTROL,
+                        "no-cache, no-store, must-revalidate".to_string(),
+                    ),
                     (header::PRAGMA, "no-cache".to_string()),
                 ],
                 content.data.to_vec(),

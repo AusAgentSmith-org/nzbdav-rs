@@ -77,12 +77,10 @@ impl UsenetArticleProvider {
                 Ok(resp) => {
                     pool.release(pooled);
                     let raw = resp.data.ok_or_else(|| {
-                        StreamError::NntpError(format!(
-                            "empty response for article {message_id}"
-                        ))
+                        StreamError::NntpError(format!("empty response for article {message_id}"))
                     })?;
-                    let decoded = decode_yenc(&raw)
-                        .map_err(|e| StreamError::YencDecode(e.to_string()))?;
+                    let decoded =
+                        decode_yenc(&raw).map_err(|e| StreamError::YencDecode(e.to_string()))?;
                     debug!(message_id, bytes = decoded.data.len(), "decoded article");
                     return Ok(decoded.data);
                 }
@@ -99,9 +97,7 @@ impl UsenetArticleProvider {
             }
         }
 
-        Err(last_err.unwrap_or_else(|| {
-            StreamError::AllServersExhausted(message_id.to_string())
-        }))
+        Err(last_err.unwrap_or_else(|| StreamError::AllServersExhausted(message_id.to_string())))
     }
 
     /// Check article existence via the STAT command. Returns `true` if any
@@ -127,7 +123,10 @@ impl UsenetArticleProvider {
                     return Ok(resp.code == 223);
                 }
                 Err(NntpError::ArticleNotFound(_)) => {
-                    debug!(pool = i, message_id, "article not found via STAT, trying next");
+                    debug!(
+                        pool = i,
+                        message_id, "article not found via STAT, trying next"
+                    );
                     pool.release(pooled);
                     last_err = Some(StreamError::ArticleNotFound(message_id.to_string()));
                 }
@@ -144,9 +143,7 @@ impl UsenetArticleProvider {
             return Ok(false);
         }
 
-        Err(last_err.unwrap_or_else(|| {
-            StreamError::AllServersExhausted(message_id.to_string())
-        }))
+        Err(last_err.unwrap_or_else(|| StreamError::AllServersExhausted(message_id.to_string())))
     }
 
     /// Fetch an article and return its yEnc part headers (begin, end, total).
@@ -170,12 +167,10 @@ impl UsenetArticleProvider {
                 Ok(resp) => {
                     pool.release(pooled);
                     let raw = resp.data.ok_or_else(|| {
-                        StreamError::NntpError(format!(
-                            "empty response for article {message_id}"
-                        ))
+                        StreamError::NntpError(format!("empty response for article {message_id}"))
                     })?;
-                    let decoded = decode_yenc(&raw)
-                        .map_err(|e| StreamError::YencDecode(e.to_string()))?;
+                    let decoded =
+                        decode_yenc(&raw).map_err(|e| StreamError::YencDecode(e.to_string()))?;
                     return Ok(YencHeaders {
                         part_begin: decoded.part_begin.unwrap_or(0),
                         part_end: decoded.part_end.unwrap_or(0),
@@ -195,9 +190,7 @@ impl UsenetArticleProvider {
             }
         }
 
-        Err(last_err.unwrap_or_else(|| {
-            StreamError::AllServersExhausted(message_id.to_string())
-        }))
+        Err(last_err.unwrap_or_else(|| StreamError::AllServersExhausted(message_id.to_string())))
     }
 }
 

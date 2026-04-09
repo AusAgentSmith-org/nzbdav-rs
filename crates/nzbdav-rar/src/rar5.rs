@@ -2,12 +2,12 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
+use crate::RAR5_MAGIC;
 use crate::crypto::{Rar5EncryptionHeader, decrypt_rar5_headers, derive_rar5_key};
 use crate::error::{RarError, Result};
 use crate::header::{
     ArchiveHeader, EndArchiveHeader, FileHeader, RarEncryption, RarHeader, ServiceHeader,
 };
-use crate::RAR5_MAGIC;
 
 /// Read a RAR5 variable-length integer (vint).
 /// Each byte: bits 0-6 are data, bit 7 is continuation flag.
@@ -45,7 +45,10 @@ fn read_u32_le<R: Read>(reader: &mut R) -> Result<u32> {
 /// parameter is used to derive the AES-256-CBC key and decrypt all subsequent headers.
 /// When no password is provided and encrypted headers are encountered, returns
 /// `RarError::EncryptedHeaders`.
-pub fn parse_rar5<R: Read + Seek>(reader: &mut R, password: Option<&str>) -> Result<Vec<RarHeader>> {
+pub fn parse_rar5<R: Read + Seek>(
+    reader: &mut R,
+    password: Option<&str>,
+) -> Result<Vec<RarHeader>> {
     // Read and verify magic
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic)?;
@@ -217,7 +220,11 @@ pub fn parse_rar5<R: Read + Seek>(reader: &mut R, password: Option<&str>) -> Res
             }
             // Unknown header type — skip
             _ => {
-                tracing::warn!("unknown RAR5 header type {} at offset {}", header_type, header_start);
+                tracing::warn!(
+                    "unknown RAR5 header type {} at offset {}",
+                    header_type,
+                    header_start
+                );
             }
         }
 
@@ -565,7 +572,7 @@ pub mod tests_helper {
         {
             let filename = b"test.txt";
             let mut inner = vec![
-                2u8, // type = file
+                2u8,  // type = file
                 0x02, // flags = has data area
                 5,    // data area size = 5
                 0x04, // file_flags = has_crc32
@@ -675,7 +682,8 @@ mod tests {
         {
             let filename = b"test.txt";
             let mut inner = vec![
-                2u8, 0x02, 5, 0x04, 5, 0, // type, flags, data_size, file_flags, unpack_size, attrs
+                2u8, 0x02, 5, 0x04, 5,
+                0, // type, flags, data_size, file_flags, unpack_size, attrs
             ];
             let data_crc = crc32fast::hash(b"hello");
             inner.extend_from_slice(&data_crc.to_le_bytes());

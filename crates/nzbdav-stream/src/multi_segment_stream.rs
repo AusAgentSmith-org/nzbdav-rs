@@ -55,7 +55,10 @@ impl MultiSegmentStream {
             }
             debug!(segments = segment_count, "prefetch task finished");
         });
-        debug!(spawned = spawn_result.is_finished(), "MultiSegmentStream background task spawned");
+        debug!(
+            spawned = spawn_result.is_finished(),
+            "MultiSegmentStream background task spawned"
+        );
 
         Self {
             receiver: rx,
@@ -82,8 +85,7 @@ impl AsyncRead for MultiSegmentStream {
             let to_copy = self.buffer.len().min(buf.remaining());
             buf.put_slice(&self.buffer[..to_copy]);
             self.buffer.advance(to_copy);
-            self.bytes_read
-                .fetch_add(to_copy as u64, Ordering::Relaxed);
+            self.bytes_read.fetch_add(to_copy as u64, Ordering::Relaxed);
             return Poll::Ready(Ok(()));
         }
 
@@ -97,8 +99,7 @@ impl AsyncRead for MultiSegmentStream {
             Poll::Ready(Some(Ok(data))) => {
                 let to_copy = data.len().min(buf.remaining());
                 buf.put_slice(&data[..to_copy]);
-                self.bytes_read
-                    .fetch_add(to_copy as u64, Ordering::Relaxed);
+                self.bytes_read.fetch_add(to_copy as u64, Ordering::Relaxed);
                 // Buffer any remainder.
                 if to_copy < data.len() {
                     self.buffer.extend_from_slice(&data[to_copy..]);

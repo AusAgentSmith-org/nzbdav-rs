@@ -2,11 +2,11 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
+use crate::RAR4_MAGIC;
 use crate::error::{RarError, Result};
 use crate::header::{
     ArchiveHeader, EndArchiveHeader, FileHeader, RarEncryption, RarHeader, ServiceHeader,
 };
-use crate::RAR4_MAGIC;
 
 // RAR4 header type constants
 const RAR4_ARCHIVE: u8 = 0x73;
