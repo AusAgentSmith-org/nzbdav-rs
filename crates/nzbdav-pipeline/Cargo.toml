@@ -2,6 +2,8 @@
 name = "nzbdav-pipeline"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "NZB processing pipeline for nzbdav"
 
 [dependencies]
 nzbdav-core = { workspace = true, default-features = false }
