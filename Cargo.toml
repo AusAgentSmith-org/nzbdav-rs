@@ -75,10 +75,10 @@ nzb-core = "0.2.2"
 nzb-decode = "0.1.1"
 rust-par2 = "0.1.2"
 
-# Workspace crates
-nzbdav-core = { path = "crates/nzbdav-core", default-features = false }
-nzbdav-dav = { path = "crates/nzbdav-dav" }
-nzbdav-stream = { path = "crates/nzbdav-stream" }
-nzbdav-rar = { path = "crates/nzbdav-rar" }
-nzbdav-pipeline = { path = "crates/nzbdav-pipeline" }
-nzbdav-arr = { path = "crates/nzbdav-arr" }
+# Workspace crates (version + registry required for cargo publish)
+nzbdav-core = { version = "0.3.0", path = "crates/nzbdav-core", registry = "forgejo", default-features = false }
+nzbdav-dav = { version = "0.3.0", path = "crates/nzbdav-dav", registry = "forgejo" }
+nzbdav-stream = { version = "0.3.0", path = "crates/nzbdav-stream", registry = "forgejo" }
+nzbdav-rar = { version = "0.3.0", path = "crates/nzbdav-rar", registry = "forgejo" }
+nzbdav-pipeline = { version = "0.3.0", path = "crates/nzbdav-pipeline", registry = "forgejo" }
+nzbdav-arr = { version = "0.3.0", path = "crates/nzbdav-arr", registry = "forgejo" }
