@@ -23,23 +23,22 @@ pub async fn get_par2_file_descriptors(
     provider: &Arc<UsenetArticleProvider>,
     file_infos: &[NzbFileInfo],
 ) -> Result<Vec<Par2File>> {
-    // Find the PAR2 index file. The index file is the one without recovery
-    // blocks — its name never contains ".vol" (e.g. "name.par2"), while
-    // recovery volumes are "name.vol000+01.par2". Prefer matching by name;
-    // fall back to smallest PAR2 file if all names contain ".vol".
-    let is_index_file = |f: &&NzbFileInfo| {
-        let name = f.resolved_name.to_ascii_lowercase();
-        !name.contains(".vol")
-    };
+    // Find the PAR2 index file. The index file contains only file descriptors
+    // (no recovery blocks) and is always small — typically under 1MB. Recovery
+    // volumes are much larger. We identify the index file by:
+    //   1. Prefer files without ".vol" in the name (unobfuscated case)
+    //   2. Fall back to the smallest PAR2 file
+    //   3. Skip entirely if the candidate is too large (>5MB = recovery volume)
+    const MAX_INDEX_FILE_SIZE: u64 = 5 * 1024 * 1024; // 5MB
+
+    let no_vol = |f: &&NzbFileInfo| !f.resolved_name.to_ascii_lowercase().contains(".vol");
 
     let par2_file = file_infos
         .iter()
         .filter(|f| f.is_par2)
-        .filter(is_index_file)
+        .filter(no_vol)
         .min_by_key(|f| f.file_size)
         .or_else(|| {
-            // Fallback: no file without ".vol" found, pick the smallest PAR2.
-            warn!("no PAR2 index file found (all contain .vol), falling back to smallest");
             file_infos
                 .iter()
                 .filter(|f| f.is_par2)
@@ -47,6 +46,14 @@ pub async fn get_par2_file_descriptors(
         });
 
     let par2_file = match par2_file {
+        Some(f) if f.file_size > MAX_INDEX_FILE_SIZE => {
+            info!(
+                smallest_par2_size = f.file_size,
+                max_index_size = MAX_INDEX_FILE_SIZE,
+                "smallest PAR2 file is too large to be an index file, skipping PAR2 deobfuscation"
+            );
+            return Ok(Vec::new());
+        }
         Some(f) => f,
         None => {
             debug!("no PAR2 files found, skipping PAR2 descriptor parsing");
