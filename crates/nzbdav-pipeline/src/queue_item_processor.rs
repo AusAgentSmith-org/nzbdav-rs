@@ -15,7 +15,7 @@ use nzbdav_stream::provider::UsenetArticleProvider;
 
 use crate::aggregators::{aggregate_plain_files, aggregate_rar_files};
 use crate::deobfuscation::{
-    fetch_first_segments::fetch_first_segments, get_file_infos::get_file_infos,
+    NzbFileInfo, fetch_first_segments::fetch_first_segments, get_file_infos::get_file_infos,
     get_par2_file_descriptors::get_par2_file_descriptors,
 };
 use crate::error::{PipelineError, Result};
@@ -177,14 +177,79 @@ impl QueueItemProcessor {
         );
 
         // ── 3. Deobfuscation ────────────────────────────────────────────
-        let stage_start = Instant::now();
-        let mut file_infos = fetch_first_segments(&self.provider, &job).await?;
-        info!(
-            job_name = %queue_item.job_name,
-            elapsed_ms = stage_start.elapsed().as_millis() as u64,
-            files = file_infos.len(),
-            "first segment fetch complete"
-        );
+        // For NZBs with many single-segment files (obfuscated posting style),
+        // skip the expensive per-file first-segment fetch. Single-segment files
+        // can't be RAR-extracted anyway (RAR volumes span multiple segments).
+        // Only process multi-segment files + PAR2 through the full pipeline.
+        let single_seg_count = job.files.iter().filter(|f| f.articles.len() <= 1).count();
+        let multi_seg_count = job.files.len() - single_seg_count;
+        let is_obfuscated_single_seg = single_seg_count > 100 && single_seg_count > multi_seg_count;
+
+        let (mut file_infos, skipped_plain_items) = if is_obfuscated_single_seg {
+            info!(
+                job_name = %queue_item.job_name,
+                single_segment_files = single_seg_count,
+                multi_segment_files = multi_seg_count,
+                "large obfuscated NZB detected — only processing multi-segment files"
+            );
+
+            // Build a reduced job with only multi-segment files.
+            let mut reduced_job = job.clone();
+            reduced_job.files.retain(|f| f.articles.len() > 1);
+
+            let stage_start = Instant::now();
+            let infos = if reduced_job.files.is_empty() {
+                Vec::new()
+            } else {
+                fetch_first_segments(&self.provider, &reduced_job).await?
+            };
+            info!(
+                job_name = %queue_item.job_name,
+                elapsed_ms = stage_start.elapsed().as_millis() as u64,
+                files = infos.len(),
+                skipped = single_seg_count,
+                "first segment fetch complete (fast mode)"
+            );
+
+            // Create plain NzbFileInfo entries for single-segment files (no fetch needed).
+            let plain: Vec<NzbFileInfo> = job
+                .files
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| f.articles.len() <= 1)
+                .map(|(i, f)| {
+                    let mut sorted_articles: Vec<_> = f.articles.iter().collect();
+                    sorted_articles.sort_by_key(|a| a.segment_number);
+                    NzbFileInfo {
+                        file_index: i,
+                        subject_name: f.filename.clone(),
+                        yenc_name: None,
+                        resolved_name: f.filename.clone(),
+                        file_size: f.bytes,
+                        segment_ids: sorted_articles
+                            .iter()
+                            .map(|a| a.message_id.clone())
+                            .collect(),
+                        is_rar: false,
+                        is_par2: false,
+                        first_16k: None,
+                        hash_16k: None,
+                    }
+                })
+                .collect();
+
+            (infos, plain)
+        } else {
+            let stage_start = Instant::now();
+            let infos = fetch_first_segments(&self.provider, &job).await?;
+            info!(
+                job_name = %queue_item.job_name,
+                elapsed_ms = stage_start.elapsed().as_millis() as u64,
+                files = infos.len(),
+                "first segment fetch complete"
+            );
+            (infos, Vec::new())
+        };
 
         let stage_start = Instant::now();
         let par2_files = get_par2_file_descriptors(&self.provider, &file_infos).await?;
@@ -196,6 +261,9 @@ impl QueueItemProcessor {
         );
 
         get_file_infos(&mut file_infos, &par2_files);
+
+        // Merge back the skipped single-segment files.
+        file_infos.extend(skipped_plain_items);
 
         info!(file_count = file_infos.len(), "deobfuscation complete");
 
