@@ -49,7 +49,11 @@ pub async fn fetch_first_segments(
         let sem = Arc::clone(&semaphore);
         let completed = Arc::clone(&completed);
 
-        let first_message_id = match nzb_file.articles.first() {
+        // Sort articles by segment number to ensure correct byte order.
+        let mut sorted_articles: Vec<_> = nzb_file.articles.iter().collect();
+        sorted_articles.sort_by_key(|a| a.segment_number);
+
+        let first_message_id = match sorted_articles.first() {
             Some(article) => article.message_id.clone(),
             None => {
                 warn!(file = %nzb_file.filename, "no articles in NZB file, skipping");
@@ -57,8 +61,7 @@ pub async fn fetch_first_segments(
             }
         };
 
-        let segment_ids: Vec<String> = nzb_file
-            .articles
+        let segment_ids: Vec<String> = sorted_articles
             .iter()
             .map(|a| a.message_id.clone())
             .collect();
@@ -106,7 +109,10 @@ async fn fetch_sequential(
     let total = job.files.len();
 
     for (index, nzb_file) in job.files.iter().enumerate() {
-        let first_message_id = match nzb_file.articles.first() {
+        let mut sorted_articles: Vec<_> = nzb_file.articles.iter().collect();
+        sorted_articles.sort_by_key(|a| a.segment_number);
+
+        let first_message_id = match sorted_articles.first() {
             Some(article) => &article.message_id,
             None => {
                 warn!(file = %nzb_file.filename, "no articles in NZB file, skipping");
@@ -114,8 +120,7 @@ async fn fetch_sequential(
             }
         };
 
-        let segment_ids: Vec<String> = nzb_file
-            .articles
+        let segment_ids: Vec<String> = sorted_articles
             .iter()
             .map(|a| a.message_id.clone())
             .collect();
