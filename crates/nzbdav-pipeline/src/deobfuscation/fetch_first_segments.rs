@@ -89,7 +89,7 @@ pub async fn fetch_first_segments(
             .await;
             drop(permit);
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-            if done % 10 == 0 || done == total_files {
+            if done.is_multiple_of(10) || done == total_files {
                 info!(
                     progress = done,
                     total = total_files,
@@ -153,7 +153,7 @@ async fn fetch_sequential(
         }
 
         let done = index + 1;
-        if done % 10 == 0 || done == total {
+        if done.is_multiple_of(10) || done == total {
             info!(
                 progress = done,
                 total, "fetching first segments (sequential)"

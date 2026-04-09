@@ -110,7 +110,7 @@ pub async fn process_rar_files(
         }
 
         rar_done += 1;
-        if rar_done % 10 == 0 || rar_done == total_rar {
+        if rar_done.is_multiple_of(10) || rar_done == total_rar {
             info!(
                 progress = rar_done,
                 total = total_rar,
