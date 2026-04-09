@@ -17,7 +17,7 @@ steps:
       CARGO_REGISTRIES_FORGEJO_TOKEN:
         from_secret: git_auth_token
     commands:
-      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\n' >> $CARGO_HOME/config.toml
+      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - cargo check --workspace
 
   - name: test
@@ -26,7 +26,7 @@ steps:
       CARGO_REGISTRIES_FORGEJO_TOKEN:
         from_secret: git_auth_token
     commands:
-      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\n' >> $CARGO_HOME/config.toml
+      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - cargo test --workspace
 
   - name: clippy
@@ -36,7 +36,7 @@ steps:
         from_secret: git_auth_token
     commands:
       - rustup component add clippy
-      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\n' >> $CARGO_HOME/config.toml
+      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - cargo clippy --workspace -- -D warnings
 
   - name: build-and-push
