@@ -11,7 +11,7 @@ use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, warn};
 
-use nzbdav_core::models::ItemSubType;
+use nzbdav_core::models::{DavMultipartFile, ItemSubType};
 
 use crate::error::DavServerError;
 use crate::propfind::multistatus_xml;
@@ -235,35 +235,81 @@ async fn serve_streaming(
         };
 
         let range = ranges[0];
+        let content_length = range.end - range.start + 1;
+        let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
 
-        // For NzbFile (plain files), use SeekableSegmentStream with Range support.
-        if node.item.sub_type == ItemSubType::NzbFile
-            && let Some(blob_id) = node.item.file_blob_id
+        if let Some(blob_id) = node.item.file_blob_id
             && let Ok(blob_data) = store.db().get_file_blob(blob_id).await
-            && let Ok(meta) = bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
         {
-            let mut stream = nzbdav_stream::SeekableSegmentStream::new(
-                store.provider(),
-                meta.segment_ids,
-                file_size,
-                store.lookahead(),
-            );
+            // MultipartFile (RAR-extracted): DavMultipartFileStream with seek.
+            if node.item.sub_type == ItemSubType::MultipartFile {
+                if let Ok(meta) = bincode::deserialize::<DavMultipartFile>(&blob_data) {
+                    let mut stream = nzbdav_stream::DavMultipartFileStream::new(
+                        store.provider(),
+                        meta.file_parts,
+                        file_size,
+                        store.lookahead(),
+                    );
 
-            if stream
-                .seek(std::io::SeekFrom::Start(range.start))
-                .await
-                .is_ok()
-            {
-                let body = Body::from_stream(ReaderStream::new(stream));
-                let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
-                return Response::builder()
-                    .status(StatusCode::PARTIAL_CONTENT)
-                    .header(header::CONTENT_TYPE, &node.content_type)
-                    .header(header::CONTENT_RANGE, content_range)
-                    .header(header::ETAG, &node.etag)
-                    .header(header::ACCEPT_RANGES, "bytes")
-                    .body(body)
-                    .unwrap();
+                    if stream
+                        .seek(std::io::SeekFrom::Start(range.start))
+                        .await
+                        .is_ok()
+                    {
+                        let body = if let Some(aes) = meta.aes_params {
+                            let decoded_size = aes.decoded_size as u64;
+                            let aes_stream = nzbdav_stream::AesDecoderStream::new(
+                                stream,
+                                &aes.key,
+                                &aes.iv,
+                                decoded_size,
+                            );
+                            Body::from_stream(ReaderStream::new(aes_stream))
+                        } else {
+                            Body::from_stream(ReaderStream::new(stream))
+                        };
+
+                        return Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(header::CONTENT_TYPE, &node.content_type)
+                            .header(header::CONTENT_RANGE, &content_range)
+                            .header(header::CONTENT_LENGTH, content_length)
+                            .header(header::ETAG, &node.etag)
+                            .header(header::ACCEPT_RANGES, "bytes")
+                            .body(body)
+                            .unwrap();
+                    }
+                }
+            }
+
+            // NzbFile (plain files): SeekableSegmentStream with seek.
+            if node.item.sub_type == ItemSubType::NzbFile {
+                if let Ok(meta) =
+                    bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
+                {
+                    let mut stream = nzbdav_stream::SeekableSegmentStream::new(
+                        store.provider(),
+                        meta.segment_ids,
+                        file_size,
+                        store.lookahead(),
+                    );
+
+                    if stream
+                        .seek(std::io::SeekFrom::Start(range.start))
+                        .await
+                        .is_ok()
+                    {
+                        return Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(header::CONTENT_TYPE, &node.content_type)
+                            .header(header::CONTENT_RANGE, &content_range)
+                            .header(header::CONTENT_LENGTH, content_length)
+                            .header(header::ETAG, &node.etag)
+                            .header(header::ACCEPT_RANGES, "bytes")
+                            .body(Body::from_stream(ReaderStream::new(stream)))
+                            .unwrap();
+                    }
+                }
             }
         }
 
@@ -272,17 +318,22 @@ async fn serve_streaming(
             Ok(body) => Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &node.content_type)
+                .header(header::CONTENT_LENGTH, file_size)
                 .header(header::ETAG, &node.etag)
+                .header(header::ACCEPT_RANGES, "bytes")
                 .body(body)
                 .unwrap(),
             Err(e) => error_response(e),
         }
     } else {
+        // No Range header: serve full body.
         match store.get_body(&node.item).await {
             Ok(body) => Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &node.content_type)
+                .header(header::CONTENT_LENGTH, file_size)
                 .header(header::ETAG, &node.etag)
+                .header(header::ACCEPT_RANGES, "bytes")
                 .body(body)
                 .unwrap(),
             Err(e) => error_response(e),
