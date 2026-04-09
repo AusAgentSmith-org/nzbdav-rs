@@ -13,16 +13,25 @@ steps:
 
   - name: check
     image: rust:1.88-bookworm
+    environment:
+      CARGO_REGISTRIES_FORGEJO_TOKEN:
+        from_secret: git_auth_token
     commands:
       - cargo check --workspace
 
   - name: test
     image: rust:1.88-bookworm
+    environment:
+      CARGO_REGISTRIES_FORGEJO_TOKEN:
+        from_secret: git_auth_token
     commands:
       - cargo test --workspace
 
   - name: clippy
     image: rust:1.88-bookworm
+    environment:
+      CARGO_REGISTRIES_FORGEJO_TOKEN:
+        from_secret: git_auth_token
     commands:
       - rustup component add clippy
       - cargo clippy --workspace -- -D warnings

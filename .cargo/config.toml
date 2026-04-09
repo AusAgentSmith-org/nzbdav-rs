@@ -1,0 +1,2 @@
+[registries.forgejo]
+index = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
