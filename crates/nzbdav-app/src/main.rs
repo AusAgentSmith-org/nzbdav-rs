@@ -254,6 +254,7 @@ fn build_router(
         .nest("/dav", dav)
         .route("/", get(frontend::frontend_index))
         .fallback(get(frontend::frontend_fallback))
+        .layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024))
 }
 
 async fn shutdown_signal() {

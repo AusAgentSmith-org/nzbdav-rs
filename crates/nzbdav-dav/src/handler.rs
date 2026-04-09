@@ -139,7 +139,7 @@ pub async fn put(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, "PUT");
 
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 50 * 1024 * 1024).await {
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 256 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
             warn!("PUT body read error: {e}");
