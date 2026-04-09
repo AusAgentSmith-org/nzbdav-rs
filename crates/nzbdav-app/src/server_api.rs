@@ -237,7 +237,9 @@ mod tests {
         let conn = nzbdav_core::db::open(":memory:").unwrap();
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let sqlite_db = nzbdav_core::sqlite_db::SqliteDavDatabase::new(Arc::clone(&db));
-        nzbdav_core::seed::seed_root_items(&sqlite_db).await.unwrap();
+        nzbdav_core::seed::seed_root_items(&sqlite_db)
+            .await
+            .unwrap();
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
         let (_, queue_status) =
