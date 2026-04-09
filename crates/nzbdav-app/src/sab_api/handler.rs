@@ -29,6 +29,7 @@ pub struct ApiParams {
     pub value: Option<String>,
     pub cat: Option<String>,
     pub priority: Option<i32>,
+    pub password: Option<String>,
     pub start: Option<i64>,
     pub limit: Option<i64>,
     /// Sonarr sends del_files=1 on delete; accepted and ignored.
@@ -190,7 +191,14 @@ async fn handle_addfile(
     let category = params.cat.unwrap_or_default();
     let priority = params.priority.unwrap_or(0);
 
-    enqueue_nzb(state, &filename, &data, &category, priority)
+    enqueue_nzb(
+        state,
+        &filename,
+        &data,
+        &category,
+        priority,
+        params.password.as_deref(),
+    )
 }
 
 /// Handle `mode=addurl` -- fetch NZB from a URL and enqueue it.
@@ -255,7 +263,14 @@ async fn handle_addurl(state: AppState, params: ApiParams) -> Json<serde_json::V
     let category = params.cat.unwrap_or_default();
     let priority = params.priority.unwrap_or(0);
 
-    enqueue_nzb(state, &filename, &data, &category, priority)
+    enqueue_nzb(
+        state,
+        &filename,
+        &data,
+        &category,
+        priority,
+        params.password.as_deref(),
+    )
 }
 
 /// Shared logic: parse an NZB, store it, and insert a queue item.
@@ -265,8 +280,18 @@ fn enqueue_nzb(
     data: &[u8],
     category: &str,
     priority: i32,
+    password: Option<&str>,
 ) -> Json<serde_json::Value> {
-    let job_name = nzbdav_core::util::get_job_name(filename);
+    // Embed password in the filename using {{password}} convention so
+    // the pipeline's get_nzb_password() picks it up during processing.
+    let stored_filename = match password {
+        Some(pw) if !pw.is_empty() && nzbdav_core::util::get_nzb_password(filename).is_none() => {
+            let base = filename.trim_end_matches(".nzb");
+            format!("{base} {{{{{pw}}}}}.nzb")
+        }
+        _ => filename.to_string(),
+    };
+    let job_name = nzbdav_core::util::get_job_name(&stored_filename);
     let nzb_job = match parse_nzb(&job_name, data) {
         Ok(job) => job,
         Err(e) => {
@@ -287,7 +312,7 @@ fn enqueue_nzb(
     let item = QueueItem {
         id: item_id,
         created_at: Utc::now().naive_utc(),
-        file_name: filename.to_string(),
+        file_name: stored_filename.clone(),
         job_name,
         nzb_file_size: data.len() as i64,
         total_segment_bytes: total_segment_bytes as i64,
@@ -323,8 +348,9 @@ fn enqueue_nzb(
 
     info!(
         nzo_id = %item.id,
-        filename = %filename,
+        filename = %stored_filename,
         total_segment_bytes,
+        has_password = password.is_some(),
         "NZB added to queue"
     );
 

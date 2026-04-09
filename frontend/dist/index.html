@@ -412,6 +412,10 @@ select.form-input{cursor:pointer}
           <option value="3">Force</option>
         </select>
       </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Password</label>
+        <input class="form-input" type="text" id="upload-password" placeholder="optional" style="width:140px">
+      </div>
     </div>
   </div>
 </div>
@@ -776,9 +780,11 @@ function handleFiles(files) {
 async function uploadNzb(file) {
   const cat = $('#upload-cat').value || '';
   const priority = $('#upload-priority').value || '0';
+  const password = $('#upload-password').value || '';
   const form = new FormData();
   form.append('nzbfile', file);
   const p = new URLSearchParams({ mode: 'addfile', cat, priority });
+  if (password) p.set('password', password);
   if (apiKey) p.set('apikey', apiKey);
   try {
     const r = await fetch(API + '?' + p, { method: 'POST', body: form });
