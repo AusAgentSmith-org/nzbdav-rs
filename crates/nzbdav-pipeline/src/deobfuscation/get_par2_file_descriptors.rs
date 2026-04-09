@@ -23,11 +23,28 @@ pub async fn get_par2_file_descriptors(
     provider: &Arc<UsenetArticleProvider>,
     file_infos: &[NzbFileInfo],
 ) -> Result<Vec<Par2File>> {
-    // Find PAR2 files and pick the smallest (the index file).
+    // Find the PAR2 index file. The index file is the one without recovery
+    // blocks — its name never contains ".vol" (e.g. "name.par2"), while
+    // recovery volumes are "name.vol000+01.par2". Prefer matching by name;
+    // fall back to smallest PAR2 file if all names contain ".vol".
+    let is_index_file = |f: &&NzbFileInfo| {
+        let name = f.resolved_name.to_ascii_lowercase();
+        !name.contains(".vol")
+    };
+
     let par2_file = file_infos
         .iter()
         .filter(|f| f.is_par2)
-        .min_by_key(|f| f.file_size);
+        .filter(is_index_file)
+        .min_by_key(|f| f.file_size)
+        .or_else(|| {
+            // Fallback: no file without ".vol" found, pick the smallest PAR2.
+            warn!("no PAR2 index file found (all contain .vol), falling back to smallest");
+            file_infos
+                .iter()
+                .filter(|f| f.is_par2)
+                .min_by_key(|f| f.file_size)
+        });
 
     let par2_file = match par2_file {
         Some(f) => f,
