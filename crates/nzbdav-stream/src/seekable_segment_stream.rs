@@ -26,6 +26,7 @@ pub struct SeekableSegmentStream {
 }
 
 /// Result of interpolation search: segment index and its byte range.
+#[allow(dead_code)]
 struct FoundSegment {
     index: usize,
     start_byte: u64,
@@ -55,13 +56,11 @@ impl SeekableSegmentStream {
     ///
     /// Fetches yEnc headers to get actual byte ranges for guessed segments,
     /// then narrows the search until the correct segment is found.
+    #[allow(dead_code)]
     async fn find_segment(&self, target_byte: u64) -> std::io::Result<FoundSegment> {
         let n = self.segment_ids.len() as i64;
         if n == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "no segments",
-            ));
+            return Err(std::io::Error::other("no segments"));
         }
         if target_byte == 0 {
             return Ok(FoundSegment {

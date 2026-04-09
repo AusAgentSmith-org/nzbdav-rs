@@ -13,6 +13,7 @@ pub async fn frontend_index() -> Response {
 }
 
 /// Serve an embedded frontend asset, falling back to `index.html` for SPA routing.
+#[allow(dead_code)]
 pub async fn frontend_handler(Path(path): Path<String>) -> Response {
     // Try exact path first, then fall back to index.html for client-side routing
     if FrontendAssets::get(&path).is_some() {

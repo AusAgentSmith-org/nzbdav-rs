@@ -13,8 +13,8 @@ use nzbdav_core::{dav_items, history_items, queue_items};
 use crate::state::AppState;
 
 use super::models::{
-    AddFileResponse, CategoriesResponse, HistoryData, HistoryResponse, HistorySlot, QueueData,
-    QueueResponse, QueueSlot, SimpleResponse, StatusResponse, VersionResponse,
+    AddFileResponse, CategoriesResponse, HistoryData, HistoryResponse, HistorySlot, QueueSlot,
+    SimpleResponse, VersionResponse,
 };
 
 #[derive(Deserialize)]

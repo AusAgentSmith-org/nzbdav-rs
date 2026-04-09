@@ -244,74 +244,53 @@ async fn serve_streaming(
         let range = ranges[0];
 
         // For NzbFile (plain files), use SeekableSegmentStream with Range support.
-        if node.item.sub_type == ItemSubType::NzbFile {
-            if let Some(blob_id) = node.item.file_blob_id {
-                let blob_data = {
-                    let conn = store.db_conn();
-                    nzbdav_core::blob_store::BlobStore::get_file_blob(&conn, blob_id)
-                };
-                if let Ok(blob_data) = blob_data {
-                    if let Ok(meta) =
-                        bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
-                    {
-                        let mut stream = nzbdav_stream::SeekableSegmentStream::new(
-                            store.provider(),
-                            meta.segment_ids,
-                            file_size,
-                            store.lookahead(),
-                        );
+        if node.item.sub_type == ItemSubType::NzbFile
+            && let Some(blob_id) = node.item.file_blob_id
+        {
+            let blob_data = {
+                let conn = store.db_conn();
+                nzbdav_core::blob_store::BlobStore::get_file_blob(&conn, blob_id)
+            };
+            if let Ok(blob_data) = blob_data
+                && let Ok(meta) =
+                    bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
+            {
+                let mut stream = nzbdav_stream::SeekableSegmentStream::new(
+                    store.provider(),
+                    meta.segment_ids,
+                    file_size,
+                    store.lookahead(),
+                );
 
-                        use tokio::io::AsyncSeekExt;
-                        if let Ok(_) = stream.seek(std::io::SeekFrom::Start(range.start)).await {
-                            // Don't use Take — the seek starts at approximately
-                            // the right position and streams to EOF. No Content-Length
-                            // since the decoded byte count is approximate.
-                            let body = Body::from_stream(ReaderStream::new(stream));
-                            let content_range =
-                                format!("bytes {}-{}/{file_size}", range.start, range.end);
-                            return Response::builder()
-                                .status(StatusCode::PARTIAL_CONTENT)
-                                .header(header::CONTENT_TYPE, &node.content_type)
-                                .header(header::CONTENT_RANGE, content_range)
-                                .header(header::ETAG, &node.etag)
-                                .header(header::ACCEPT_RANGES, "bytes")
-                                .body(body)
-                                .unwrap();
-                        }
-                    }
+                use tokio::io::AsyncSeekExt;
+                if stream
+                    .seek(std::io::SeekFrom::Start(range.start))
+                    .await
+                    .is_ok()
+                {
+                    let body = Body::from_stream(ReaderStream::new(stream));
+                    let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
+                    return Response::builder()
+                        .status(StatusCode::PARTIAL_CONTENT)
+                        .header(header::CONTENT_TYPE, &node.content_type)
+                        .header(header::CONTENT_RANGE, content_range)
+                        .header(header::ETAG, &node.etag)
+                        .header(header::ACCEPT_RANGES, "bytes")
+                        .body(body)
+                        .unwrap();
                 }
             }
         }
 
         // Fallback: serve full body (chunked, no Content-Length).
         match store.get_body(&node.item) {
-            Ok(body) => {
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .header(header::CONTENT_TYPE, &node.content_type)
-                    .header(header::ETAG, &node.etag)
-                    .body(body)
-                    .unwrap();
-            }
-            Err(e) => return error_response(e),
-        }
-        match build_ranged_body(store, node, &range).await {
-            Ok(ranged_body) => {
-                let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
-                Response::builder()
-                    .status(StatusCode::PARTIAL_CONTENT)
-                    .header(header::CONTENT_TYPE, &node.content_type)
-                    .header(header::CONTENT_LENGTH, range.length())
-                    .header(header::CONTENT_RANGE, content_range)
-                    .header(header::ETAG, &node.etag)
-                    .header(header::ACCEPT_RANGES, "bytes")
-                    .body(ranged_body)
-                    .unwrap()
-            }
-            Err(e) => {
-                warn!("range stream failed: {e}");
-                error_response(e)
-            }
+            Ok(body) => Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, &node.content_type)
+                .header(header::ETAG, &node.etag)
+                .body(body)
+                .unwrap(),
+            Err(e) => error_response(e),
         }
     } else {
         // No range — serve full body (chunked, no Content-Length for streaming).
@@ -328,6 +307,7 @@ async fn serve_streaming(
 }
 
 /// Build a ranged body by seeking and taking the appropriate bytes.
+#[allow(dead_code)]
 async fn build_ranged_body(
     store: DavState,
     node: &crate::store::DavNode,

@@ -12,6 +12,7 @@ use tracing::warn;
 /// Events that can be broadcast to WebSocket clients.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 pub enum WsEvent {
     Queue {
         queue_count: usize,

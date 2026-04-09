@@ -12,7 +12,7 @@ use rust_par2::Par2File;
 use tracing::{debug, warn};
 
 use super::NzbFileInfo;
-use crate::error::{PipelineError, Result};
+use crate::error::Result;
 
 /// Find the smallest PAR2 index file among the NZB files, fetch all of its
 /// segments, parse the PAR2 packets, and return the file descriptors.

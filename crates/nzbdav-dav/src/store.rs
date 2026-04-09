@@ -12,9 +12,7 @@ use uuid::Uuid;
 use nzbdav_core::blob_store::BlobStore;
 use nzbdav_core::models::{DavItem, DavMultipartFile, DavNzbFile, ItemSubType, ItemType};
 use nzbdav_core::{dav_items, dav_items::get_by_path, queue_items};
-use nzbdav_stream::{
-    AesDecoderStream, DavMultipartFileStream, NzbFileStream, UsenetArticleProvider,
-};
+use nzbdav_stream::{AesDecoderStream, DavMultipartFileStream, UsenetArticleProvider};
 
 use crate::error::{DavServerError, Result};
 

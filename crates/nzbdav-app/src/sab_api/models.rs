@@ -1,11 +1,13 @@
 use serde::Serialize;
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct QueueResponse {
     pub queue: QueueData,
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct QueueData {
     /// "Downloading" / "Idle" / "Paused"
     pub status: String,
@@ -72,6 +74,7 @@ pub struct VersionResponse {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct StatusResponse {
     pub status: String,
     pub version: String,

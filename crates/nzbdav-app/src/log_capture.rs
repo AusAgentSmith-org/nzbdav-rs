@@ -66,6 +66,7 @@ impl CaptureLayer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_ws(mut self, tx: broadcast::Sender<WsEvent>) -> Self {
         self.ws_tx = Some(tx);
         self
