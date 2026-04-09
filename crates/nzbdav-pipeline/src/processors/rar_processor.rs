@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nzbdav_core::models::{FilePart, LongRange};
 use nzbdav_stream::provider::UsenetArticleProvider;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::deobfuscation::NzbFileInfo;
 use crate::error::{PipelineError, Result};
@@ -22,7 +22,12 @@ pub async fn process_rar_files(
     password: Option<&str>,
 ) -> Result<Vec<ProcessedFile>> {
     let mut results = Vec::new();
+    let total_rar = rar_files.iter().filter(|f| f.is_rar).count();
+    if total_rar > 0 {
+        info!(rar_files = total_rar, "processing RAR headers");
+    }
 
+    let mut rar_done = 0usize;
     for rar_file in rar_files {
         if !rar_file.is_rar {
             continue;
@@ -102,6 +107,16 @@ pub async fn process_rar_files(
                 is_encrypted: fh.is_encrypted,
                 encryption: fh.encryption.clone(),
             });
+        }
+
+        rar_done += 1;
+        if rar_done % 10 == 0 || rar_done == total_rar {
+            info!(
+                progress = rar_done,
+                total = total_rar,
+                files_found = results.len(),
+                "parsing RAR headers"
+            );
         }
     }
 

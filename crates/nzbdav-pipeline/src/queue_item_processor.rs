@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -78,6 +79,8 @@ impl QueueItemProcessor {
         queue_item: &QueueItem,
         nzb_data: &[u8],
     ) -> Result<ProcessResult> {
+        let pipeline_start = Instant::now();
+
         // ── 1. Parse NZB ────────────────────────────────────────────────
         let job: NzbJob = parse_nzb(&queue_item.job_name, nzb_data)
             .map_err(|e| PipelineError::Other(format!("NZB parse error: {e}")))?;
@@ -118,9 +121,23 @@ impl QueueItemProcessor {
         );
 
         // ── 3. Deobfuscation ────────────────────────────────────────────
+        let stage_start = Instant::now();
         let mut file_infos = fetch_first_segments(&self.provider, &job).await?;
+        info!(
+            job_name = %queue_item.job_name,
+            elapsed_ms = stage_start.elapsed().as_millis() as u64,
+            files = file_infos.len(),
+            "first segment fetch complete"
+        );
 
+        let stage_start = Instant::now();
         let par2_files = get_par2_file_descriptors(&self.provider, &file_infos).await?;
+        info!(
+            job_name = %queue_item.job_name,
+            elapsed_ms = stage_start.elapsed().as_millis() as u64,
+            descriptors = par2_files.len(),
+            "PAR2 descriptor fetch complete"
+        );
 
         get_file_infos(&mut file_infos, &par2_files);
 
@@ -143,17 +160,21 @@ impl QueueItemProcessor {
             );
         }
         let lookahead = self.config.article_buffer_size;
+        let stage_start = Instant::now();
         let processed_rar =
             process_rar_files(&self.provider, &rar_files, lookahead, password.as_deref()).await?;
         let processed_plain = process_plain_files(&plain_files);
 
-        debug!(
+        info!(
+            job_name = %queue_item.job_name,
+            elapsed_ms = stage_start.elapsed().as_millis() as u64,
             rar_files = processed_rar.len(),
             plain_files = processed_plain.len(),
-            "processing complete"
+            "file processing complete"
         );
 
         // ── 6. Aggregate ────────────────────────────────────────────────
+        let stage_start = Instant::now();
         let rar_aggregated = aggregate_rar_files(
             &processed_rar,
             job_dir.id,
@@ -161,6 +182,13 @@ impl QueueItemProcessor {
             password.as_deref(),
         )?;
         let plain_aggregated = aggregate_plain_files(&processed_plain, job_dir.id, &job_dir_path);
+        info!(
+            job_name = %queue_item.job_name,
+            elapsed_ms = stage_start.elapsed().as_millis() as u64,
+            rar_items = rar_aggregated.len(),
+            plain_items = plain_aggregated.len(),
+            "aggregation complete"
+        );
 
         let mut items: Vec<DavItem> = Vec::new();
         let mut multipart_blobs: Vec<(Uuid, DavMultipartFile)> = Vec::new();
@@ -176,9 +204,19 @@ impl QueueItemProcessor {
         }
 
         // ── 7. Post-process ─────────────────────────────────────────────
+        let pre_filter_count = items.len();
         rename_duplicates(&mut items);
 
         let items = filter_blocklisted(items, &self.config.file_blocklist);
+        let blocked_count = pre_filter_count - items.len();
+        if blocked_count > 0 {
+            info!(
+                job_name = %queue_item.job_name,
+                blocked = blocked_count,
+                remaining = items.len(),
+                "blocklist filtered files"
+            );
+        }
 
         if self.config.ensure_importable_video {
             ensure_importable_video(&items)?;
@@ -190,8 +228,16 @@ impl QueueItemProcessor {
             &job_dir_path,
             &self.config.webdav_base_url,
         );
+        if !strm_items.is_empty() {
+            info!(
+                job_name = %queue_item.job_name,
+                strm_files = strm_items.len(),
+                "created STRM files"
+            );
+        }
 
         // ── 8. Persist to database ──────────────────────────────────────
+        let stage_start = Instant::now();
         let surviving_ids: std::collections::HashSet<Uuid> = items.iter().map(|i| i.id).collect();
 
         let mut total_created: usize = 0;
@@ -226,7 +272,16 @@ impl QueueItemProcessor {
         }
 
         info!(
+            job_name = %queue_item.job_name,
+            elapsed_ms = stage_start.elapsed().as_millis() as u64,
+            items_persisted = total_created,
+            "database persistence complete"
+        );
+
+        info!(
+            job_name = %queue_item.job_name,
             items_created = total_created,
+            total_elapsed_ms = pipeline_start.elapsed().as_millis() as u64,
             job_dir_id = %job_dir.id,
             "pipeline complete"
         );

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use parking_lot::Mutex;
@@ -204,6 +204,7 @@ async fn process_single_item(
 
     let job_name = item.job_name.clone();
     let item_id = item.id;
+    let start = Instant::now();
 
     // Load NZB blob
     let nzb_data = match dav_db.get_nzb_blob(item_id).await {
@@ -229,7 +230,12 @@ async fn process_single_item(
 
     match result {
         Ok(pr) => {
-            info!(job_name = %job_name, items_created = pr.items_created, "processed successfully");
+            info!(
+                job_name = %job_name,
+                items_created = pr.items_created,
+                elapsed_secs = start.elapsed().as_secs_f32(),
+                "processed successfully"
+            );
             move_to_history(
                 &dav_db,
                 &item,

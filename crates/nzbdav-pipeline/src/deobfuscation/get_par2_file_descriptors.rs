@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use nzbdav_stream::provider::UsenetArticleProvider;
 use rust_par2::Par2File;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use super::NzbFileInfo;
 use crate::error::Result;
@@ -37,7 +37,7 @@ pub async fn get_par2_file_descriptors(
         }
     };
 
-    debug!(
+    info!(
         subject_name = %par2_file.subject_name,
         file_size = par2_file.file_size,
         segments = par2_file.segment_ids.len(),
@@ -65,7 +65,7 @@ pub async fn get_par2_file_descriptors(
             }
         };
 
-    debug!(
+    info!(
         descriptor_count = descriptors.len(),
         "parsed PAR2 file descriptors"
     );
@@ -88,6 +88,7 @@ async fn fetch_all_segments(
     segment_ids: &[String],
 ) -> Result<Vec<u8>> {
     let mut data = Vec::new();
+    let total = segment_ids.len();
 
     for (i, message_id) in segment_ids.iter().enumerate() {
         let decoded = provider.fetch_decoded(message_id).await.map_err(|e| {
@@ -101,6 +102,16 @@ async fn fetch_all_segments(
         })?;
 
         data.extend_from_slice(&decoded);
+
+        let done = i + 1;
+        if total > 5 && (done % 5 == 0 || done == total) {
+            info!(
+                progress = done,
+                total,
+                bytes = data.len(),
+                "fetching PAR2 segments"
+            );
+        }
     }
 
     Ok(data)

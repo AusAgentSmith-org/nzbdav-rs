@@ -843,10 +843,13 @@ function clearLogs() {
 }
 
 // --- Servers ---
+let _serverCache = {};
 async function loadServers() {
   try {
     const r = await fetch('/api/servers');
     const servers = await r.json();
+    _serverCache = {};
+    servers.forEach(s => { _serverCache[s.id] = s; });
     const tbody = $('#servers-body');
     const empty = $('#servers-empty');
     tbody.innerHTML = '';
@@ -867,7 +870,7 @@ async function loadServers() {
           <td><span class="tag ${s.enabled ? 'tag-ok' : 'tag-fail'}">${s.enabled ? 'Yes' : 'No'}</span></td>
           <td>
             <button class="btn btn-sm" onclick="testServer('${s.id}')">Test</button>
-            <button class="btn btn-sm" onclick="editServer('${esc(JSON.stringify(s))}')">Edit</button>
+            <button class="btn btn-sm" onclick="editServer('${s.id}')">Edit</button>
             <button class="btn btn-sm btn-danger" onclick="deleteServer('${s.id}')">Delete</button>
           </td>
         </tr>`;
@@ -894,8 +897,9 @@ function showAddServer() {
   $('#server-form-panel').style.display = '';
 }
 
-function editServer(jsonStr) {
-  const s = JSON.parse(jsonStr);
+function editServer(id) {
+  const s = _serverCache[id];
+  if (!s) return;
   $('#sf-id').value = s.id;
   $('#sf-name').value = s.name || '';
   $('#sf-host').value = s.host || '';

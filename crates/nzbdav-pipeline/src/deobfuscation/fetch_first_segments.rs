@@ -1,6 +1,7 @@
 //! Step 1: Fetch the first segment of each NZB file to detect file types
 //! and compute 16KB MD5 hashes for PAR2 matching.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use md5::{Digest, Md5};
@@ -40,10 +41,13 @@ pub async fn fetch_first_segments(
 
     let semaphore = Arc::new(Semaphore::new(total_conns));
     let mut join_set = JoinSet::new();
+    let total_files = job.files.len();
+    let completed = Arc::new(AtomicUsize::new(0));
 
     for (index, nzb_file) in job.files.iter().enumerate() {
         let provider = Arc::clone(provider);
         let sem = Arc::clone(&semaphore);
+        let completed = Arc::clone(&completed);
 
         let first_message_id = match nzb_file.articles.first() {
             Some(article) => article.message_id.clone(),
@@ -81,6 +85,10 @@ pub async fn fetch_first_segments(
             )
             .await;
             drop(permit);
+            let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
+            if done % 10 == 0 || done == total_files {
+                info!(progress = done, total = total_files, "fetching first segments");
+            }
             result
         });
     }
@@ -95,6 +103,7 @@ async fn fetch_sequential(
     job: &NzbJob,
 ) -> Result<Vec<NzbFileInfo>> {
     let mut file_infos = Vec::with_capacity(job.files.len());
+    let total = job.files.len();
 
     for (index, nzb_file) in job.files.iter().enumerate() {
         let first_message_id = match nzb_file.articles.first() {
@@ -133,10 +142,15 @@ async fn fetch_sequential(
                 );
             }
         }
+
+        let done = index + 1;
+        if done % 10 == 0 || done == total {
+            info!(progress = done, total, "fetching first segments (sequential)");
+        }
     }
 
-    debug!(
-        total = job.files.len(),
+    info!(
+        total,
         fetched = file_infos.len(),
         "first-segment fetch complete (sequential)"
     );
