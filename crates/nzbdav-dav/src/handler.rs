@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
 use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use nzbdav_core::models::{DavMultipartFile, ItemSubType};
 
@@ -64,8 +64,6 @@ pub async fn get(State(store): State<DavState>, req: Request) -> Response {
         .and_then(|v| v.to_str().ok())
         .map(String::from);
 
-    debug!(path, "GET");
-
     let node = match store.get_node(&path).await {
         Ok(Some(n)) => n,
         Ok(None) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
@@ -82,6 +80,16 @@ pub async fn get(State(store): State<DavState>, req: Request) -> Response {
     } else {
         raw_size
     };
+
+    info!(
+        path = %path,
+        sub_type = ?node.item.sub_type,
+        file_size,
+        has_file_blob = node.item.file_blob_id.is_some(),
+        has_nzb_blob = node.item.nzb_blob_id.is_some(),
+        range = ?range_header,
+        "GET file request"
+    );
 
     if node.item.file_blob_id.is_some() {
         return serve_streaming(store, &node, file_size, range_header).await;
@@ -244,6 +252,12 @@ async fn serve_streaming(
             // MultipartFile (RAR-extracted): DavMultipartFileStream with seek.
             if node.item.sub_type == ItemSubType::MultipartFile {
                 if let Ok(meta) = bincode::deserialize::<DavMultipartFile>(&blob_data) {
+                    info!(
+                        parts = meta.file_parts.len(),
+                        encrypted = meta.aes_params.is_some(),
+                        range_start = range.start,
+                        "streaming MultipartFile"
+                    );
                     let mut stream = nzbdav_stream::DavMultipartFileStream::new(
                         store.provider(),
                         meta.file_parts,
