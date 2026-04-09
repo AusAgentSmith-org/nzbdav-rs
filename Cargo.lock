@@ -956,7 +956,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -1375,7 +1375,7 @@ checksum = "52589c0af44a709b928af2cdb7aa592c012ed12446951eb13a7cca1a573554e8"
 dependencies = [
  "anyhow",
  "chrono",
- "nzb-nntp 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nzb-nntp 0.2.6",
  "parking_lot",
  "quick-xml",
  "rusqlite",
@@ -1431,9 +1431,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-nntp"
-version = "0.2.6"
+version = "0.2.8"
 source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "f61944290dd3718fb9c1a4c4e833c18f84c59d1b012b2b855a18364fdcdfab73"
+checksum = "a9212c9ddacb61298a69ea6458d27350b8325ad8dfb26a3b197d2b22207200af"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1467,7 +1467,7 @@ dependencies = [
  "http",
  "mime_guess",
  "nzb-core",
- "nzb-nntp 0.2.6 (sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/)",
+ "nzb-nntp 0.2.8",
  "nzbdav-arr",
  "nzbdav-core",
  "nzbdav-dav",
@@ -1599,7 +1599,7 @@ dependencies = [
  "bytes",
  "cbc",
  "nzb-decode",
- "nzb-nntp 0.2.6 (sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/)",
+ "nzb-nntp 0.2.8",
  "nzbdav-core",
  "parking_lot",
  "thiserror 2.0.18",
@@ -1794,7 +1794,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1831,7 +1831,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.52.0",
 ]

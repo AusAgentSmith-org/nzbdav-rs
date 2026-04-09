@@ -54,21 +54,18 @@ fn default_connections() -> u16 {
 
 impl ServerEntry {
     fn to_server_config(&self) -> ServerConfig {
-        ServerConfig {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            host: self.host.clone(),
-            port: self.port,
-            ssl: self.ssl,
-            ssl_verify: self.ssl_verify,
-            username: self.username.clone(),
-            password: self.password.clone(),
-            connections: self.connections,
-            priority: self.priority,
-            enabled: self.enabled,
-            retention: self.retention,
-            ..ServerConfig::default()
-        }
+        let mut c = ServerConfig::new(&self.id, &self.host);
+        c.name = self.name.clone();
+        c.port = self.port;
+        c.ssl = self.ssl;
+        c.ssl_verify = self.ssl_verify;
+        c.username = self.username.clone();
+        c.password = self.password.clone();
+        c.connections = self.connections;
+        c.priority = self.priority;
+        c.enabled = self.enabled;
+        c.retention = self.retention;
+        c
     }
 }
 
