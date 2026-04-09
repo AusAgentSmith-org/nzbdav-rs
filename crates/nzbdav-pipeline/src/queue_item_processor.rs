@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use nzb_core::models::NzbJob;
@@ -90,6 +90,45 @@ impl QueueItemProcessor {
             file_count = job.files.len(),
             "parsed NZB"
         );
+
+        // ── 1b. Check for incomplete NZB (missing early segments) ──────
+        let mut incomplete_files = Vec::new();
+        for nzb_file in &job.files {
+            if nzb_file.articles.is_empty() {
+                continue;
+            }
+            let min_seg = nzb_file
+                .articles
+                .iter()
+                .map(|a| a.segment_number)
+                .min()
+                .unwrap_or(1);
+            let max_seg = nzb_file
+                .articles
+                .iter()
+                .map(|a| a.segment_number)
+                .max()
+                .unwrap_or(1);
+            let expected = (max_seg - min_seg + 1) as usize;
+            let present = nzb_file.articles.len();
+            let missing_start = min_seg > 1;
+
+            if missing_start || present < expected / 2 {
+                incomplete_files.push(format!(
+                    "{}: segments {}-{}, have {}/{} (missing start: {})",
+                    nzb_file.filename, min_seg, max_seg, present, expected, missing_start
+                ));
+            }
+        }
+        if !incomplete_files.is_empty() {
+            let count = incomplete_files.len();
+            for detail in &incomplete_files {
+                warn!(job_name = %queue_item.job_name, "{detail}");
+            }
+            return Err(PipelineError::IncompleteNzb(format!(
+                "{count} file(s) have missing segments — NZB is incomplete"
+            )));
+        }
 
         // ── 2. Create job directory ─────────────────────────────────────
         let category = &queue_item.category;

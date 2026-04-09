@@ -26,6 +26,9 @@ pub enum PipelineError {
     #[error("no importable video file found")]
     NoImportableVideo,
 
+    #[error("incomplete NZB: {0}")]
+    IncompleteNzb(String),
+
     #[error(transparent)]
     Rar(#[from] nzbdav_rar::error::RarError),
 
