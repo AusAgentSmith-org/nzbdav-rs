@@ -21,3 +21,6 @@ pub use nzb_file_stream::NzbFileStream;
 pub use prioritized_semaphore::{PrioritizedPermit, PrioritizedSemaphore};
 pub use provider::{UsenetArticleProvider, YencHeaders};
 pub use seekable_segment_stream::SeekableSegmentStream;
+
+// Re-export nzb_nntp so consumers can use the same ConnectionPool/ServerConfig types
+pub use nzb_nntp;

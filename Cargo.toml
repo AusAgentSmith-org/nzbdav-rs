@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 license = "MIT"
 
@@ -69,16 +69,16 @@ sha2 = "0.10"
 hmac = "0.12"
 pbkdf2 = { version = "0.12", features = ["hmac"] }
 
-# Shared NZB crates (published on crates.io)
-nzb-nntp = "0.2.3"
-nzb-core = "0.2.2"
-nzb-decode = "0.1.1"
-rust-par2 = "0.1.2"
+# Shared NZB crates (forgejo registry)
+nzb-nntp = { version = "0.2.4", registry = "forgejo" }
+nzb-core = { version = "0.2.2", registry = "forgejo" }
+nzb-decode = { version = "0.1.1", registry = "forgejo" }
+rust-par2 = { version = "0.1.2", registry = "forgejo" }
 
 # Workspace crates (version + registry required for cargo publish)
-nzbdav-core = { version = "0.3.0", path = "crates/nzbdav-core", registry = "forgejo", default-features = false }
-nzbdav-dav = { version = "0.3.0", path = "crates/nzbdav-dav", registry = "forgejo" }
-nzbdav-stream = { version = "0.3.0", path = "crates/nzbdav-stream", registry = "forgejo" }
-nzbdav-rar = { version = "0.3.0", path = "crates/nzbdav-rar", registry = "forgejo" }
-nzbdav-pipeline = { version = "0.3.0", path = "crates/nzbdav-pipeline", registry = "forgejo" }
-nzbdav-arr = { version = "0.3.0", path = "crates/nzbdav-arr", registry = "forgejo" }
+nzbdav-core = { version = "0.3.1", path = "crates/nzbdav-core", registry = "forgejo", default-features = false }
+nzbdav-dav = { version = "0.3.1", path = "crates/nzbdav-dav", registry = "forgejo" }
+nzbdav-stream = { version = "0.3.1", path = "crates/nzbdav-stream", registry = "forgejo" }
+nzbdav-rar = { version = "0.3.1", path = "crates/nzbdav-rar", registry = "forgejo" }
+nzbdav-pipeline = { version = "0.3.1", path = "crates/nzbdav-pipeline", registry = "forgejo" }
+nzbdav-arr = { version = "0.3.1", path = "crates/nzbdav-arr", registry = "forgejo" }

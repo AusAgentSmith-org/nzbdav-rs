@@ -956,7 +956,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -1369,13 +1369,13 @@ dependencies = [
 
 [[package]]
 name = "nzb-core"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85b455e4026dbab1840cf2e64de87df52e386aef2dc108720fc67715b59fd94b"
+version = "0.2.3"
+source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
+checksum = "000b572679ca51ecbb16aad696c75103615304556a0edb2343f520f9e7a7788c"
 dependencies = [
  "anyhow",
  "chrono",
- "nzb-nntp",
+ "nzb-nntp 0.2.3",
  "parking_lot",
  "quick-xml",
  "rusqlite",
@@ -1390,9 +1390,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-decode"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9e5a03187e14442b4ce69a71a233c2a1c0e5785f49bfb758a66a4a6e6f2c5a6"
+version = "0.1.2"
+source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
+checksum = "d60a378f66c2cc5a6be5641c88fd1a6d9785ec3508cb1f4c35d97e1f7a06f399"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1429,8 +1429,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nzb-nntp"
+version = "0.2.5"
+source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
+checksum = "51f9ee06d7fc1e2d90f4f6716eb3c2f525935cc0b5daaf2742fecf2a2a39e569"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "bytes",
+ "flate2",
+ "governor",
+ "parking_lot",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "socket2 0.5.10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls",
+ "tokio-socks",
+ "tracing",
+ "uuid",
+ "webpki-roots",
+]
+
+[[package]]
 name = "nzbdav-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1441,7 +1466,7 @@ dependencies = [
  "http",
  "mime_guess",
  "nzb-core",
- "nzb-nntp",
+ "nzb-nntp 0.2.5",
  "nzbdav-arr",
  "nzbdav-core",
  "nzbdav-dav",
@@ -1466,7 +1491,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-arr"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bincode",
  "chrono",
@@ -1486,7 +1511,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1507,7 +1532,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-dav"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "bincode",
@@ -1529,7 +1554,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-pipeline"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bincode",
  "chrono",
@@ -1550,7 +1575,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-rar"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aes",
  "cbc",
@@ -1566,14 +1591,14 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-stream"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aes",
  "arc-swap",
  "bytes",
  "cbc",
  "nzb-decode",
- "nzb-nntp",
+ "nzb-nntp 0.2.5",
  "nzbdav-core",
  "parking_lot",
  "thiserror 2.0.18",
@@ -1768,7 +1793,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1805,7 +1830,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.52.0",
 ]
@@ -2036,8 +2061,8 @@ dependencies = [
 [[package]]
 name = "rust-par2"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "316a361ebfb34b398e72eb31a4f366d51c9c0c8d7e60f70b1904c025175c2d6b"
+source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
+checksum = "4eee39b7caf8a4c96db9e4c4525b04f7517ca025746e12bfb2781b9850248df9"
 dependencies = [
  "crc32fast",
  "md-5",
@@ -2316,6 +2341,16 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "socket2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
@@ -2508,7 +2543,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.6.3",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
