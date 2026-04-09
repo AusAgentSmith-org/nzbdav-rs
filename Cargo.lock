@@ -1430,9 +1430,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-nntp"
-version = "0.2.5"
+version = "0.2.6"
 source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "51f9ee06d7fc1e2d90f4f6716eb3c2f525935cc0b5daaf2742fecf2a2a39e569"
+checksum = "f61944290dd3718fb9c1a4c4e833c18f84c59d1b012b2b855a18364fdcdfab73"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1466,7 +1466,7 @@ dependencies = [
  "http",
  "mime_guess",
  "nzb-core",
- "nzb-nntp 0.2.5",
+ "nzb-nntp 0.2.6",
  "nzbdav-arr",
  "nzbdav-core",
  "nzbdav-dav",
@@ -1598,7 +1598,7 @@ dependencies = [
  "bytes",
  "cbc",
  "nzb-decode",
- "nzb-nntp 0.2.5",
+ "nzb-nntp 0.2.6",
  "nzbdav-core",
  "parking_lot",
  "thiserror 2.0.18",

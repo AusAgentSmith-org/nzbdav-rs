@@ -92,7 +92,8 @@ impl QueueItemProcessor {
         );
 
         // ── 1b. Check for incomplete NZB (missing early segments) ──────
-        let mut incomplete_files = Vec::new();
+        let mut incomplete_count = 0usize;
+        let total_files = job.files.len();
         for nzb_file in &job.files {
             if nzb_file.articles.is_empty() {
                 continue;
@@ -114,20 +115,36 @@ impl QueueItemProcessor {
             let missing_start = min_seg > 1;
 
             if missing_start || present < expected / 2 {
-                incomplete_files.push(format!(
-                    "{}: segments {}-{}, have {}/{} (missing start: {})",
-                    nzb_file.filename, min_seg, max_seg, present, expected, missing_start
-                ));
+                incomplete_count += 1;
+                debug!(
+                    file = %nzb_file.filename,
+                    segments = %format!("{min_seg}-{max_seg}"),
+                    present,
+                    expected,
+                    missing_start,
+                    "incomplete file in NZB"
+                );
             }
         }
-        if !incomplete_files.is_empty() {
-            let count = incomplete_files.len();
-            for detail in &incomplete_files {
-                warn!(job_name = %queue_item.job_name, "{detail}");
+        if incomplete_count > 0 {
+            let pct = incomplete_count * 100 / total_files.max(1);
+            if pct > 50 {
+                warn!(
+                    job_name = %queue_item.job_name,
+                    incomplete = incomplete_count,
+                    total = total_files,
+                    "NZB is mostly incomplete ({pct}% of files missing segments)"
+                );
+                return Err(PipelineError::IncompleteNzb(format!(
+                    "{incomplete_count}/{total_files} files ({pct}%) have missing segments"
+                )));
             }
-            return Err(PipelineError::IncompleteNzb(format!(
-                "{count} file(s) have missing segments — NZB is incomplete"
-            )));
+            info!(
+                job_name = %queue_item.job_name,
+                incomplete = incomplete_count,
+                total = total_files,
+                "skipping {incomplete_count} incomplete file(s) ({pct}%)"
+            );
         }
 
         // ── 2. Create job directory ─────────────────────────────────────
