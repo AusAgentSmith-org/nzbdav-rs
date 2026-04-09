@@ -95,6 +95,35 @@ steps:
       - DST_CREDS="--dest-creds=AusAgentSmith:$GH_TOKEN"
       - for tag in $CI_COMMIT_TAG latest; do skopeo copy $SRC_CREDS $DST_CREDS $SRC "docker://ghcr.io/ausagentsmith-org/nzbdav-rs:$tag"; done
 
+  - name: github-release
+    image: alpine:3.23
+    when:
+      - event: tag
+    environment:
+      GH_TOKEN:
+        from_secret: gh_release_token
+    commands:
+      - apk add --no-cache git curl jq
+      - |
+        TAG="$CI_COMMIT_TAG"
+        REPO="AusAgentSmith-org/nzbdav-rs"
+        echo "Creating GitHub release $TAG on $REPO"
+
+        git remote add github "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" 2>/dev/null || true
+        git push github "refs/tags/$TAG" --force
+
+        BODY="## Docker Images\n\n"
+        BODY="$BODY- \`ghcr.io/ausagentsmith-org/nzbdav-rs:${TAG}\`\n"
+        BODY="$BODY- \`docker.io/ausagentsmith/nzbdav-rs:${TAG}\`\n"
+
+        curl -sf -X POST \
+          -H "Authorization: token $GH_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"tag_name\":\"$TAG\",\"name\":\"nzbdav-rs $TAG\",\"body\":\"$(echo -e "$BODY")\",\"draft\":false,\"prerelease\":false}" \
+          "https://api.github.com/repos/$REPO/releases" > /dev/null
+
+        echo "GitHub release $TAG created"
+
   - name: push-github
     image: alpine/git
     when:
