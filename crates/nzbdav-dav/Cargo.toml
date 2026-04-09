@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-nzbdav-core = { workspace = true }
+nzbdav-core = { workspace = true, default-features = false }
 nzbdav-stream = { workspace = true }
 axum = { workspace = true }
 http = { workspace = true }
@@ -14,8 +14,6 @@ quick-xml = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-rusqlite = { workspace = true }
-parking_lot = { workspace = true }
 bincode = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

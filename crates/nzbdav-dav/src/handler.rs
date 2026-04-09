@@ -7,7 +7,7 @@ use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::AsyncSeekExt;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, warn};
 
@@ -31,7 +31,7 @@ pub async fn propfind(State(store): State<DavState>, req: Request) -> Response {
 
     debug!(path, depth, "PROPFIND");
 
-    let node = match store.get_node(&path) {
+    let node = match store.get_node(&path).await {
         Ok(Some(n)) => n,
         Ok(None) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
         Err(e) => return error_response(e),
@@ -40,7 +40,7 @@ pub async fn propfind(State(store): State<DavState>, req: Request) -> Response {
     let mut nodes = vec![node];
 
     if depth != "0" {
-        match store.list_children(&path) {
+        match store.list_children(&path).await {
             Ok(children) => nodes.extend(children),
             Err(e) => return error_response(e),
         }
@@ -66,7 +66,7 @@ pub async fn get(State(store): State<DavState>, req: Request) -> Response {
 
     debug!(path, "GET");
 
-    let node = match store.get_node(&path) {
+    let node = match store.get_node(&path).await {
         Ok(Some(n)) => n,
         Ok(None) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
         Err(e) => return error_response(e),
@@ -77,23 +77,18 @@ pub async fn get(State(store): State<DavState>, req: Request) -> Response {
     }
 
     let raw_size = node.item.file_size.unwrap_or(0) as u64;
-    // Stored file_size is raw yEnc segment bytes (~3% larger than decoded content).
-    // Estimate decoded size for HTTP Content-Length and Range calculations.
     let file_size = if node.item.sub_type == ItemSubType::NzbFile {
         (raw_size as f64 * 0.97) as u64
     } else {
         raw_size
     };
 
-    // For items that have a file_blob_id, stream from Usenet.
-    // For items that only have an nzb_blob_id (raw NZB XML), serve the blob directly.
     if node.item.file_blob_id.is_some() {
         return serve_streaming(store, &node, file_size, range_header).await;
     }
 
-    // Serve raw NZB XML for items with only nzb_blob_id
     if node.item.nzb_blob_id.is_some() {
-        return serve_nzb_blob(store, &node);
+        return serve_nzb_blob(store, &node).await;
     }
 
     (StatusCode::NOT_FOUND, "No content available").into_response()
@@ -104,7 +99,7 @@ pub async fn head(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, "HEAD");
 
-    let node = match store.get_node(&path) {
+    let node = match store.get_node(&path).await {
         Ok(Some(n)) => n,
         Ok(None) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
         Err(e) => return error_response(e),
@@ -144,7 +139,7 @@ pub async fn put(State(store): State<DavState>, req: Request) -> Response {
         }
     };
 
-    match store.put_nzb(&path, &body_bytes) {
+    match store.put_nzb(&path, &body_bytes).await {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(e) => error_response(e),
     }
@@ -155,7 +150,7 @@ pub async fn mkcol(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, "MKCOL");
 
-    match store.mkcol(&path) {
+    match store.mkcol(&path).await {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(e) => error_response(e),
     }
@@ -166,7 +161,7 @@ pub async fn delete(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, "DELETE");
 
-    match store.delete(&path) {
+    match store.delete(&path).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => error_response(e),
     }
@@ -181,7 +176,7 @@ pub async fn r#move(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, destination, "MOVE");
 
-    match store.move_item(&path, &destination) {
+    match store.move_item(&path, &destination).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => error_response(e),
     }
@@ -196,7 +191,7 @@ pub async fn copy(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
     debug!(path, destination, "COPY");
 
-    match store.copy_item(&path, &destination) {
+    match store.copy_item(&path, &destination).await {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(e) => error_response(e),
     }
@@ -228,7 +223,6 @@ async fn serve_streaming(
     range_header: Option<String>,
 ) -> Response {
     if let Some(range_val) = range_header {
-        // Parse the range and serve partial content.
         let ranges = match parse_range(&range_val, file_size) {
             Ok(r) => r,
             Err(_) => {
@@ -240,50 +234,41 @@ async fn serve_streaming(
             }
         };
 
-        // We only support a single range for streaming.
         let range = ranges[0];
 
         // For NzbFile (plain files), use SeekableSegmentStream with Range support.
         if node.item.sub_type == ItemSubType::NzbFile
             && let Some(blob_id) = node.item.file_blob_id
+            && let Ok(blob_data) = store.db().get_file_blob(blob_id).await
+            && let Ok(meta) = bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
         {
-            let blob_data = {
-                let conn = store.db_conn();
-                nzbdav_core::blob_store::BlobStore::get_file_blob(&conn, blob_id)
-            };
-            if let Ok(blob_data) = blob_data
-                && let Ok(meta) =
-                    bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
-            {
-                let mut stream = nzbdav_stream::SeekableSegmentStream::new(
-                    store.provider(),
-                    meta.segment_ids,
-                    file_size,
-                    store.lookahead(),
-                );
+            let mut stream = nzbdav_stream::SeekableSegmentStream::new(
+                store.provider(),
+                meta.segment_ids,
+                file_size,
+                store.lookahead(),
+            );
 
-                use tokio::io::AsyncSeekExt;
-                if stream
-                    .seek(std::io::SeekFrom::Start(range.start))
-                    .await
-                    .is_ok()
-                {
-                    let body = Body::from_stream(ReaderStream::new(stream));
-                    let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
-                    return Response::builder()
-                        .status(StatusCode::PARTIAL_CONTENT)
-                        .header(header::CONTENT_TYPE, &node.content_type)
-                        .header(header::CONTENT_RANGE, content_range)
-                        .header(header::ETAG, &node.etag)
-                        .header(header::ACCEPT_RANGES, "bytes")
-                        .body(body)
-                        .unwrap();
-                }
+            if stream
+                .seek(std::io::SeekFrom::Start(range.start))
+                .await
+                .is_ok()
+            {
+                let body = Body::from_stream(ReaderStream::new(stream));
+                let content_range = format!("bytes {}-{}/{file_size}", range.start, range.end);
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::CONTENT_TYPE, &node.content_type)
+                    .header(header::CONTENT_RANGE, content_range)
+                    .header(header::ETAG, &node.etag)
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .body(body)
+                    .unwrap();
             }
         }
 
-        // Fallback: serve full body (chunked, no Content-Length).
-        match store.get_body(&node.item) {
+        // Fallback: serve full body.
+        match store.get_body(&node.item).await {
             Ok(body) => Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &node.content_type)
@@ -293,8 +278,7 @@ async fn serve_streaming(
             Err(e) => error_response(e),
         }
     } else {
-        // No range — serve full body (chunked, no Content-Length for streaming).
-        match store.get_body(&node.item) {
+        match store.get_body(&node.item).await {
             Ok(body) => Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &node.content_type)
@@ -306,93 +290,16 @@ async fn serve_streaming(
     }
 }
 
-/// Build a ranged body by seeking and taking the appropriate bytes.
-#[allow(dead_code)]
-async fn build_ranged_body(
-    store: DavState,
-    node: &crate::store::DavNode,
-    range: &crate::range::ByteRange,
-) -> Result<Body, DavServerError> {
-    let blob_id = node
-        .item
-        .file_blob_id
-        .ok_or_else(|| DavServerError::NotFound("no file blob".into()))?;
-
-    let blob_data = {
-        let conn = store.db_conn();
-        nzbdav_core::blob_store::BlobStore::get_file_blob(&conn, blob_id)?
-    };
-
-    let file_size = node.item.file_size.unwrap_or(0) as u64;
-
-    match node.item.sub_type {
-        ItemSubType::MultipartFile => {
-            let meta: nzbdav_core::models::DavMultipartFile = bincode::deserialize(&blob_data)
-                .map_err(|e| DavServerError::Other(format!("deserialize error: {e}")))?;
-
-            let mut stream = nzbdav_stream::DavMultipartFileStream::new(
-                store.provider(),
-                meta.file_parts,
-                file_size,
-                store.lookahead(),
-            );
-
-            if let Some(aes) = meta.aes_params {
-                let decoded_size = aes.decoded_size as u64;
-                let mut aes_stream =
-                    nzbdav_stream::AesDecoderStream::new(stream, &aes.key, &aes.iv, decoded_size);
-                aes_stream
-                    .seek(std::io::SeekFrom::Start(range.start))
-                    .await
-                    .map_err(|e| DavServerError::Other(format!("seek error: {e}")))?;
-                let take = aes_stream.take(range.length());
-                Ok(Body::from_stream(ReaderStream::new(take)))
-            } else {
-                stream
-                    .seek(std::io::SeekFrom::Start(range.start))
-                    .await
-                    .map_err(|e| DavServerError::Other(format!("seek error: {e}")))?;
-                let take = stream.take(range.length());
-                Ok(Body::from_stream(ReaderStream::new(take)))
-            }
-        }
-        ItemSubType::NzbFile => {
-            let meta: nzbdav_core::models::DavNzbFile = bincode::deserialize(&blob_data)
-                .map_err(|e| DavServerError::Other(format!("deserialize error: {e}")))?;
-
-            let mut stream = nzbdav_stream::NzbFileStream::new(
-                store.provider(),
-                meta.segment_ids,
-                file_size,
-                store.lookahead(),
-            );
-
-            stream
-                .seek(std::io::SeekFrom::Start(range.start))
-                .await
-                .map_err(|e| DavServerError::Other(format!("seek error: {e}")))?;
-            let take = stream.take(range.length());
-            Ok(Body::from_stream(ReaderStream::new(take)))
-        }
-        other => Err(DavServerError::Other(format!(
-            "unsupported sub_type for range: {other:?}"
-        ))),
-    }
-}
-
 /// Serve raw NZB XML blob directly.
-fn serve_nzb_blob(store: DavState, node: &crate::store::DavNode) -> Response {
+async fn serve_nzb_blob(store: DavState, node: &crate::store::DavNode) -> Response {
     let blob_id = match node.item.nzb_blob_id {
         Some(id) => id,
         None => return (StatusCode::NOT_FOUND, "No NZB blob").into_response(),
     };
 
-    let data = {
-        let conn = store.db_conn();
-        match nzbdav_core::blob_store::BlobStore::get_nzb_blob(&conn, blob_id) {
-            Ok(d) => d,
-            Err(e) => return error_response(e.into()),
-        }
+    let data = match store.db().get_nzb_blob(blob_id).await {
+        Ok(d) => d,
+        Err(e) => return error_response(e.into()),
     };
 
     Response::builder()
@@ -407,7 +314,6 @@ fn serve_nzb_blob(store: DavState, node: &crate::store::DavNode) -> Response {
 /// Extract the Destination header (used by MOVE/COPY), returning just the path.
 fn extract_destination(req: &Request) -> Option<String> {
     let val = req.headers().get("destination")?.to_str().ok()?;
-    // Destination may be an absolute URL or just a path.
     if let Ok(uri) = val.parse::<http::Uri>() {
         Some(decode_path(uri.path()))
     } else {

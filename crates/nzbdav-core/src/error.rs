@@ -2,8 +2,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DavError {
+    #[cfg(feature = "sqlite")]
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Sqlite(#[from] rusqlite::Error),
+
+    #[error("database error: {0}")]
+    Database(String),
 
     #[error("blob not found: {0}")]
     BlobNotFound(String),

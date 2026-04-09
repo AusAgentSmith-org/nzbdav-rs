@@ -51,6 +51,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "regis
 thiserror = "2"
 anyhow = "1"
 # Util
+async-trait = "0.1"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 parking_lot = "0.12"
@@ -75,7 +76,7 @@ nzb-decode = "0.1.1"
 rust-par2 = "0.1.2"
 
 # Workspace crates
-nzbdav-core = { path = "crates/nzbdav-core" }
+nzbdav-core = { path = "crates/nzbdav-core", default-features = false }
 nzbdav-dav = { path = "crates/nzbdav-dav" }
 nzbdav-stream = { path = "crates/nzbdav-stream" }
 nzbdav-rar = { path = "crates/nzbdav-rar" }

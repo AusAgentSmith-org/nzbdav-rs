@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-nzbdav-core = { workspace = true }
+nzbdav-core = { workspace = true, default-features = false }
 nzbdav-stream = { workspace = true }
 nzbdav-rar = { workspace = true }
 nzb-core = { workspace = true }
@@ -19,7 +19,6 @@ regex = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 bincode = { workspace = true }
-rusqlite = { workspace = true }
 
 [lints]
 workspace = true

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-nzbdav-core = { workspace = true }
+nzbdav-core = { workspace = true, features = ["sqlite"] }
 nzb-core = { workspace = true }
 nzbdav-dav = { workspace = true }
 nzbdav-stream = { workspace = true }

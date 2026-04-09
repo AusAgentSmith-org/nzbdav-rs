@@ -3,17 +3,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use rusqlite::Connection;
+use parking_lot::Mutex;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use nzbdav_core::blob_store::BlobStore;
 use nzbdav_core::config::ConfigManager;
+use nzbdav_core::database::DavDatabase;
 use nzbdav_core::models::{DownloadStatus, HistoryItem, QueueItem};
-use nzbdav_core::{history_items, queue_items};
-use nzbdav_pipeline::queue_item_processor::QueueItemProcessor;
+use nzbdav_core::sqlite_db::SqliteDavDatabase;
+use nzbdav_pipeline::queue_item_processor::{PipelineConfig, QueueItemProcessor};
 use nzbdav_stream::UsenetArticleProvider;
 
 /// Live status of the queue processing loop.
@@ -37,6 +37,13 @@ pub fn spawn_queue_manager(
     let (status_tx, status_rx) = watch::channel(QueueStatus::default());
     let max_concurrent = config.get_max_concurrent_queue();
 
+    let pipeline_config = PipelineConfig {
+        article_buffer_size: config.get_article_buffer_size(),
+        file_blocklist: config.get_file_blocklist(),
+        ensure_importable_video: config.is_ensure_importable_video_enabled(),
+        webdav_base_url: config.get_or_default("api.webdav-base-url", "http://localhost:8080"),
+    };
+
     let handle = std::thread::Builder::new()
         .name("queue-manager".into())
         .spawn(move || {
@@ -47,7 +54,7 @@ pub fn spawn_queue_manager(
 
             let local = tokio::task::LocalSet::new();
             local.block_on(&rt, async move {
-                let processor = Arc::new(QueueItemProcessor::new(provider, config));
+                let processor = Arc::new(QueueItemProcessor::new(provider, pipeline_config));
                 run_loop(db_path, processor, cancel, status_tx, max_concurrent).await;
             });
         })
@@ -85,7 +92,6 @@ async fn run_loop(
             }
         }
 
-        // Update status based on active tasks
         if active.is_empty() {
             status_tx.send_modify(|s| {
                 s.is_processing = false;
@@ -94,12 +100,10 @@ async fn run_loop(
             });
         }
 
-        // If below limit, try to grab next item
         if active.len() < max_concurrent {
-            let conn = match nzbdav_core::db::open(&db_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    error!(error = %e, "failed to open DB for queue poll");
+            let dav_db = match open_sqlite_db(&db_path) {
+                Some(db) => db,
+                None => {
                     tokio::select! {
                         () = cancel.cancelled() => break,
                         () = tokio::time::sleep(poll_interval) => continue,
@@ -108,7 +112,7 @@ async fn run_loop(
             };
 
             let exclude: Vec<Uuid> = active_ids.iter().copied().collect();
-            match queue_items::get_next_excluding(&conn, &exclude) {
+            match dav_db.get_next_queue_item(&exclude).await {
                 Ok(Some(item)) => {
                     let job_name = item.job_name.clone();
                     let item_id = item.id;
@@ -136,18 +140,16 @@ async fn run_loop(
                         item_id
                     });
 
-                    continue; // Try to grab another immediately
+                    continue;
                 }
-                Ok(None) => {} // Queue empty, wait
+                Ok(None) => {}
                 Err(e) => {
                     error!(error = %e, "failed to fetch next queue item");
                     status_tx.send_modify(|s| s.last_error = Some(e.to_string()));
                 }
             }
-            drop(conn);
         }
 
-        // Wait for a task to complete, cancellation, or poll timer
         tokio::select! {
             () = cancel.cancelled() => break,
             Some(result) = active.join_next() => {
@@ -165,7 +167,6 @@ async fn run_loop(
         }
     }
 
-    // Drain remaining tasks on shutdown
     while let Some(result) = active.join_next().await {
         match result {
             Ok(id) => {
@@ -180,35 +181,43 @@ async fn run_loop(
     info!("queue manager stopped");
 }
 
+fn open_sqlite_db(db_path: &str) -> Option<SqliteDavDatabase> {
+    match nzbdav_core::db::open(db_path) {
+        Ok(conn) => Some(SqliteDavDatabase::new(Arc::new(Mutex::new(conn)))),
+        Err(e) => {
+            error!(error = %e, "failed to open DB for queue poll");
+            None
+        }
+    }
+}
+
 async fn process_single_item(
     db_path: &str,
     processor: &QueueItemProcessor,
     item: QueueItem,
     status_tx: &watch::Sender<QueueStatus>,
 ) {
-    let conn = match nzbdav_core::db::open(db_path) {
-        Ok(c) => c,
-        Err(e) => {
-            error!(error = %e, "failed to open DB for queue item processing");
-            return;
-        }
+    let dav_db = match open_sqlite_db(db_path) {
+        Some(db) => db,
+        None => return,
     };
 
     let job_name = item.job_name.clone();
     let item_id = item.id;
 
-    // Load NZB blob (stored with queue item's UUID as key)
-    let nzb_data = match BlobStore::get_nzb_blob(&conn, item_id) {
+    // Load NZB blob
+    let nzb_data = match dav_db.get_nzb_blob(item_id).await {
         Ok(data) => data,
         Err(e) => {
             error!(job_name = %job_name, error = %e, "NZB blob not found — failing");
             move_to_history(
-                &conn,
+                &dav_db,
                 &item,
                 DownloadStatus::Failed,
                 Some(format!("NZB blob not found: {e}")),
                 None,
-            );
+            )
+            .await;
             status_tx.send_modify(|s| {
                 s.last_error = Some(e.to_string());
             });
@@ -216,19 +225,19 @@ async fn process_single_item(
         }
     };
 
-    // Run the pipeline
-    let result = processor.process(&conn, &item, &nzb_data).await;
+    let result = processor.process(&dav_db, &item, &nzb_data).await;
 
     match result {
         Ok(pr) => {
             info!(job_name = %job_name, items_created = pr.items_created, "processed successfully");
             move_to_history(
-                &conn,
+                &dav_db,
                 &item,
                 DownloadStatus::Completed,
                 None,
                 Some(pr.job_dir_id),
-            );
+            )
+            .await;
             status_tx.send_modify(|s| {
                 s.items_processed += 1;
                 s.last_error = None;
@@ -238,19 +247,22 @@ async fn process_single_item(
             if e.is_retryable() {
                 warn!(job_name = %job_name, error = %e, "retryable error — pausing 60s");
                 let pause_until = Utc::now().naive_utc() + chrono::Duration::seconds(60);
-                if let Err(ue) = queue_items::update_pause_until(&conn, item_id, Some(pause_until))
+                if let Err(ue) = dav_db
+                    .update_queue_pause_until(item_id, Some(pause_until))
+                    .await
                 {
                     error!(error = %ue, "failed to set pause_until");
                 }
             } else {
                 error!(job_name = %job_name, error = %e, "non-retryable error — failing");
                 move_to_history(
-                    &conn,
+                    &dav_db,
                     &item,
                     DownloadStatus::Failed,
                     Some(e.to_string()),
                     None,
-                );
+                )
+                .await;
             }
             status_tx.send_modify(|s| {
                 s.last_error = Some(e.to_string());
@@ -259,8 +271,8 @@ async fn process_single_item(
     }
 }
 
-fn move_to_history(
-    conn: &Connection,
+async fn move_to_history(
+    db: &dyn DavDatabase,
     item: &QueueItem,
     status: DownloadStatus,
     fail_message: Option<String>,
@@ -280,10 +292,10 @@ fn move_to_history(
         nzb_blob_id: Some(item.id),
     };
 
-    if let Err(e) = history_items::insert(conn, &history) {
+    if let Err(e) = db.insert_history_item(&history).await {
         error!(error = %e, "failed to insert history item");
     }
-    if let Err(e) = queue_items::delete(conn, item.id) {
+    if let Err(e) = db.delete_queue_item(item.id).await {
         error!(error = %e, "failed to delete queue item");
     }
 }

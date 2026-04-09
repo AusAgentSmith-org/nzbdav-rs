@@ -121,6 +121,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-trait"
+version = "0.1.89"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1477,6 +1488,7 @@ dependencies = [
 name = "nzbdav-core"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "bincode",
  "chrono",
  "glob",
@@ -1488,6 +1500,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
  "uuid",
 ]
@@ -1504,10 +1517,8 @@ dependencies = [
  "mime_guess",
  "nzbdav-core",
  "nzbdav-stream",
- "parking_lot",
  "percent-encoding",
  "quick-xml",
- "rusqlite",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -1529,7 +1540,6 @@ dependencies = [
  "nzbdav-rar",
  "nzbdav-stream",
  "regex",
- "rusqlite",
  "rust-par2",
  "serde",
  "thiserror 2.0.18",

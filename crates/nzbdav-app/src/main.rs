@@ -29,6 +29,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 use nzbdav_core::config::ConfigManager;
+use nzbdav_core::sqlite_db::SqliteDavDatabase;
 use nzbdav_core::{db, seed};
 use nzbdav_dav::{DatabaseStore, dav_router};
 use nzbdav_stream::UsenetArticleProvider;
@@ -60,16 +61,20 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. Database
     let conn = db::open(&cli.db_path)?;
-    seed::seed_root_items(&conn)?;
-    let config = ConfigManager::new();
-    config.load_from_db(&conn)?;
     let db = Arc::new(Mutex::new(conn));
+    let dav_db = Arc::new(SqliteDavDatabase::new(db.clone()));
+
+    // Seed root items via the trait
+    seed::seed_root_items(&*dav_db).await?;
+
+    let config = ConfigManager::new();
+    config.load_from_db(&db.lock())?;
 
     // 4. Usenet provider
     let provider = Arc::new(UsenetArticleProvider::new(vec![]));
 
     let dav_store = Arc::new(DatabaseStore::new(
-        db.clone(),
+        dav_db.clone() as Arc<dyn nzbdav_core::database::DavDatabase>,
         provider.clone(),
         config.get_article_buffer_size(),
     ));

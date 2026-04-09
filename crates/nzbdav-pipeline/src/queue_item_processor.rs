@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
-use rusqlite::Connection;
 use tracing::{debug, info};
 use uuid::Uuid;
 
 use nzb_core::models::NzbJob;
 use nzb_core::nzb_parser::parse_nzb;
-use nzbdav_core::blob_store::BlobStore;
-use nzbdav_core::config::ConfigManager;
-use nzbdav_core::dav_items;
+use nzbdav_core::database::DavDatabase;
 use nzbdav_core::models::{
     DavItem, DavMultipartFile, DavNzbFile, ItemSubType, ItemType, QueueItem,
 };
@@ -34,6 +31,26 @@ pub struct ProcessResult {
     pub job_dir_id: Uuid,
 }
 
+/// Configuration for the pipeline (extracted from ConfigManager to avoid coupling).
+#[derive(Debug, Clone)]
+pub struct PipelineConfig {
+    pub article_buffer_size: usize,
+    pub file_blocklist: Vec<String>,
+    pub ensure_importable_video: bool,
+    pub webdav_base_url: String,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            article_buffer_size: 40,
+            file_blocklist: Vec::new(),
+            ensure_importable_video: true,
+            webdav_base_url: "http://localhost:8080".to_string(),
+        }
+    }
+}
+
 /// Orchestrates the full NZB processing pipeline for a single queue item.
 ///
 /// Pipeline stages:
@@ -46,18 +63,18 @@ pub struct ProcessResult {
 /// 7. Persist results to the database
 pub struct QueueItemProcessor {
     provider: Arc<UsenetArticleProvider>,
-    config: ConfigManager,
+    config: PipelineConfig,
 }
 
 impl QueueItemProcessor {
-    pub fn new(provider: Arc<UsenetArticleProvider>, config: ConfigManager) -> Self {
+    pub fn new(provider: Arc<UsenetArticleProvider>, config: PipelineConfig) -> Self {
         Self { provider, config }
     }
 
     /// Process a single queue item through the full pipeline.
     pub async fn process(
         &self,
-        conn: &Connection,
+        db: &dyn DavDatabase,
         queue_item: &QueueItem,
         nzb_data: &[u8],
     ) -> Result<ProcessResult> {
@@ -75,26 +92,24 @@ impl QueueItemProcessor {
         let category = &queue_item.category;
         let content_root_path = "/content/";
 
-        // If category is non-empty, create a subdirectory for it; otherwise
-        // place jobs directly under /content/.
         let parent_path = if category.is_empty() {
             content_root_path.to_string()
         } else {
             let category_path = format!("{content_root_path}{category}/");
             let _category_dir =
-                ensure_directory(conn, &category_path, category, content_root_path)?;
+                ensure_directory(db, &category_path, category, content_root_path).await?;
             category_path
         };
         let job_dir_path = format!("{parent_path}{}/", queue_item.job_name);
 
-        // Ensure the job directory exists (may already exist from a previous failed attempt).
         let job_dir = ensure_directory_with_history(
-            conn,
+            db,
             &job_dir_path,
             &queue_item.job_name,
             &parent_path,
             Some(queue_item.id),
-        )?;
+        )
+        .await?;
 
         debug!(
             job_dir_id = %job_dir.id,
@@ -120,7 +135,6 @@ impl QueueItemProcessor {
             .collect();
 
         // ── 5. Process ──────────────────────────────────────────────────
-        // Extract password: first check NZB filename {{password}}, then NZB XML metadata
         let password = get_nzb_password(&queue_item.file_name).or_else(|| job.password.clone());
         if password.is_some() {
             info!(
@@ -128,7 +142,7 @@ impl QueueItemProcessor {
                 "NZB password detected"
             );
         }
-        let lookahead = self.config.get_article_buffer_size();
+        let lookahead = self.config.article_buffer_size;
         let processed_rar =
             process_rar_files(&self.provider, &rar_files, lookahead, password.as_deref()).await?;
         let processed_plain = process_plain_files(&plain_files);
@@ -148,7 +162,6 @@ impl QueueItemProcessor {
         )?;
         let plain_aggregated = aggregate_plain_files(&processed_plain, job_dir.id, &job_dir_path);
 
-        // Collect all DavItems for post-processing.
         let mut items: Vec<DavItem> = Vec::new();
         let mut multipart_blobs: Vec<(Uuid, DavMultipartFile)> = Vec::new();
         let mut nzb_file_blobs: Vec<(Uuid, DavNzbFile)> = Vec::new();
@@ -163,62 +176,52 @@ impl QueueItemProcessor {
         }
 
         // ── 7. Post-process ─────────────────────────────────────────────
-        // 7a. Rename duplicates
         rename_duplicates(&mut items);
 
-        // 7b. Filter blocklisted files
-        let blocklist = self.config.get_file_blocklist();
-        let items = filter_blocklisted(items, &blocklist);
+        let items = filter_blocklisted(items, &self.config.file_blocklist);
 
-        // 7c. Ensure at least one importable video (if enabled)
-        if self.config.is_ensure_importable_video_enabled() {
+        if self.config.ensure_importable_video {
             ensure_importable_video(&items)?;
         }
 
-        // 7d. Create STRM files for video items
-        let webdav_base_url = self
-            .config
-            .get_or_default("api.webdav-base-url", "http://localhost:8080");
-        let strm_items = create_strm_items(&items, job_dir.id, &job_dir_path, &webdav_base_url);
+        let strm_items = create_strm_items(
+            &items,
+            job_dir.id,
+            &job_dir_path,
+            &self.config.webdav_base_url,
+        );
 
         // ── 8. Persist to database ──────────────────────────────────────
-        // Collect the IDs of items that survived post-processing (blocklist
-        // may have removed some).
         let surviving_ids: std::collections::HashSet<Uuid> = items.iter().map(|i| i.id).collect();
 
         let mut total_created: usize = 0;
 
-        // Insert file items + blobs.
         for mut item in items {
-            // Store multipart blob if this item has one.
             if let Some((_id, multipart)) = multipart_blobs.iter().find(|(id, _)| *id == item.id) {
                 let blob_id = Uuid::new_v4();
                 let blob_data = bincode::serialize(multipart)
                     .map_err(|e| PipelineError::Other(format!("bincode error: {e}")))?;
-                BlobStore::put_file_blob(conn, blob_id, &blob_data)?;
+                db.put_file_blob(blob_id, &blob_data).await?;
                 item.file_blob_id = Some(blob_id);
             }
 
-            // Store NZB file blob if this item has one.
             if let Some((_id, nzb_file)) = nzb_file_blobs.iter().find(|(id, _)| *id == item.id) {
-                // Only persist if the item survived blocklist filtering.
                 if !surviving_ids.contains(&item.id) {
                     continue;
                 }
                 let blob_id = Uuid::new_v4();
                 let blob_data = bincode::serialize(nzb_file)
                     .map_err(|e| PipelineError::Other(format!("bincode error: {e}")))?;
-                BlobStore::put_file_blob(conn, blob_id, &blob_data)?;
+                db.put_file_blob(blob_id, &blob_data).await?;
                 item.file_blob_id = Some(blob_id);
             }
 
-            dav_items::insert(conn, &item)?;
+            db.insert_dav_item(&item).await?;
             total_created += 1;
         }
 
-        // Insert STRM items.
         for item in &strm_items {
-            dav_items::insert(conn, item)?;
+            db.insert_dav_item(item).await?;
             total_created += 1;
         }
 
@@ -238,47 +241,45 @@ impl QueueItemProcessor {
 // ── Helper functions ────────────────────────────────────────────────────────
 
 /// Ensure a directory exists at `path`; create it if missing.
-fn ensure_directory(
-    conn: &Connection,
+async fn ensure_directory(
+    db: &dyn DavDatabase,
     path: &str,
     name: &str,
     parent_path: &str,
 ) -> Result<DavItem> {
-    if let Some(existing) = dav_items::get_by_path(conn, path)? {
+    if let Some(existing) = db.get_dav_item_by_path(path).await? {
         return Ok(existing);
     }
 
-    // Find the parent.
-    let parent = dav_items::get_by_path(conn, parent_path)?.ok_or_else(|| {
+    let parent = db.get_dav_item_by_path(parent_path).await?.ok_or_else(|| {
         PipelineError::Other(format!("parent directory not found: {parent_path}"))
     })?;
 
-    create_directory(conn, path, name, parent.id, None)
+    create_directory(db, path, name, parent.id, None).await
 }
 
 /// Ensure a directory exists, with an optional history_item_id.
-/// Used for job directories which may already exist from a failed retry.
-fn ensure_directory_with_history(
-    conn: &Connection,
+async fn ensure_directory_with_history(
+    db: &dyn DavDatabase,
     path: &str,
     name: &str,
     parent_path: &str,
     history_item_id: Option<Uuid>,
 ) -> Result<DavItem> {
-    if let Some(existing) = dav_items::get_by_path(conn, path)? {
+    if let Some(existing) = db.get_dav_item_by_path(path).await? {
         return Ok(existing);
     }
 
-    let parent = dav_items::get_by_path(conn, parent_path)?.ok_or_else(|| {
+    let parent = db.get_dav_item_by_path(parent_path).await?.ok_or_else(|| {
         PipelineError::Other(format!("parent directory not found: {parent_path}"))
     })?;
 
-    create_directory(conn, path, name, parent.id, history_item_id)
+    create_directory(db, path, name, parent.id, history_item_id).await
 }
 
 /// Create and insert a new directory `DavItem`.
-fn create_directory(
-    conn: &Connection,
+async fn create_directory(
+    db: &dyn DavDatabase,
     path: &str,
     name: &str,
     parent_id: Uuid,
@@ -307,6 +308,6 @@ fn create_directory(
         nzb_blob_id: None,
     };
 
-    dav_items::insert(conn, &item)?;
+    db.insert_dav_item(&item).await?;
     Ok(item)
 }

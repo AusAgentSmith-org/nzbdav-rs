@@ -18,7 +18,7 @@ impl BlobStore {
         conn.query_row(&sql, rusqlite::params![id.to_string()], |row| row.get(0))
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => DavError::BlobNotFound(id.to_string()),
-                other => DavError::Database(other),
+                other => DavError::Sqlite(other),
             })
     }
 
