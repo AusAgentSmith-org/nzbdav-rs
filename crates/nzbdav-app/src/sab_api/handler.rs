@@ -754,10 +754,11 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
-    fn test_state() -> AppState {
+    async fn test_state() -> AppState {
         let conn = nzbdav_core::db::open(":memory:").unwrap();
-        nzbdav_core::seed::seed_root_items(&conn).unwrap();
         let db = Arc::new(parking_lot::Mutex::new(conn));
+        let sqlite_db = nzbdav_core::sqlite_db::SqliteDavDatabase::new(Arc::clone(&db));
+        nzbdav_core::seed::seed_root_items(&sqlite_db).await.unwrap();
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
         let (_, queue_status) =
@@ -771,8 +772,8 @@ mod tests {
         }
     }
 
-    fn test_router() -> Router {
-        let state = test_state();
+    async fn test_router() -> Router {
+        let state = test_state().await;
         Router::new()
             .route("/api", get(sab_api).post(sab_api))
             .route("/api/history/{id}/retry", post(rest_retry_history))
@@ -780,7 +781,7 @@ mod tests {
     }
 
     async fn get_json(uri: &str) -> serde_json::Value {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(Request::get(uri).body(Body::empty()).unwrap())
             .await
@@ -858,7 +859,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_addfile_no_multipart() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(
                 Request::post("/api?mode=addfile")

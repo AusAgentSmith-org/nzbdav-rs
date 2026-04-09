@@ -169,10 +169,11 @@ mod tests {
     use std::sync::Arc;
     use tower::ServiceExt;
 
-    fn test_state() -> AppState {
+    async fn test_state() -> AppState {
         let conn = nzbdav_core::db::open(":memory:").unwrap();
-        nzbdav_core::seed::seed_root_items(&conn).unwrap();
         let db = Arc::new(parking_lot::Mutex::new(conn));
+        let sqlite_db = nzbdav_core::sqlite_db::SqliteDavDatabase::new(Arc::clone(&db));
+        nzbdav_core::seed::seed_root_items(&sqlite_db).await.unwrap();
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
         let (_, queue_status) =
@@ -186,8 +187,8 @@ mod tests {
         }
     }
 
-    fn test_router() -> Router {
-        let state = test_state();
+    async fn test_router() -> Router {
+        let state = test_state().await;
         Router::new()
             .route("/api/settings", get(get_settings).put(update_settings))
             .with_state(state)
@@ -195,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_settings_defaults() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(Request::get("/api/settings").body(Body::empty()).unwrap())
             .await
@@ -214,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_settings() {
-        let app = test_router();
+        let app = test_router().await;
         let body = serde_json::json!({
             "categories": "tv, movies",
             "file_blocklist": "*.nfo",

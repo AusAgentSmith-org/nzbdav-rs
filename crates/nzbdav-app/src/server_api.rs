@@ -233,10 +233,11 @@ mod tests {
 
     use crate::state::AppState;
 
-    fn test_state() -> AppState {
+    async fn test_state() -> AppState {
         let conn = nzbdav_core::db::open(":memory:").unwrap();
-        nzbdav_core::seed::seed_root_items(&conn).unwrap();
         let db = Arc::new(parking_lot::Mutex::new(conn));
+        let sqlite_db = nzbdav_core::sqlite_db::SqliteDavDatabase::new(Arc::clone(&db));
+        nzbdav_core::seed::seed_root_items(&sqlite_db).await.unwrap();
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
         let (_, queue_status) =
@@ -250,8 +251,8 @@ mod tests {
         }
     }
 
-    fn test_router() -> Router {
-        let state = test_state();
+    async fn test_router() -> Router {
+        let state = test_state().await;
         Router::new()
             .route("/api/servers", get(list_servers).post(add_server))
             .route(
@@ -280,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_empty() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(Request::get("/api/servers").body(Body::empty()).unwrap())
             .await
@@ -295,7 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_server() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(
                 Request::post("/api/servers")
@@ -318,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_server_empty_host() {
-        let app = test_router();
+        let app = test_router().await;
         let mut json = sample_server_json();
         json["host"] = serde_json::json!("");
         let resp = app
@@ -336,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn test_add_and_list() {
         // We need shared state across requests, so build state once
-        let state = test_state();
+        let state = test_state().await;
         let app = Router::new()
             .route("/api/servers", get(list_servers).post(add_server))
             .with_state(state);
@@ -370,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_server() {
-        let state = test_state();
+        let state = test_state().await;
         let app = Router::new()
             .route("/api/servers", get(list_servers).post(add_server))
             .route(
@@ -422,7 +423,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_not_found() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(
                 Request::delete("/api/servers/00000000-0000-0000-0000-000000000000")
@@ -436,7 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_server() {
-        let state = test_state();
+        let state = test_state().await;
         let app = Router::new()
             .route("/api/servers", get(list_servers).post(add_server))
             .route(
@@ -488,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_not_found() {
-        let app = test_router();
+        let app = test_router().await;
         let resp = app
             .oneshot(
                 Request::put("/api/servers/00000000-0000-0000-0000-000000000000")
