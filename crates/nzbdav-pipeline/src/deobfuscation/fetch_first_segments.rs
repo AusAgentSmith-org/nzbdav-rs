@@ -1,8 +1,8 @@
 //! Step 1: Fetch the first segment of each NZB file to detect file types
 //! and compute 16KB MD5 hashes for PAR2 matching.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use md5::{Digest, Md5};
 use nzb_core::models::NzbJob;
@@ -90,7 +90,11 @@ pub async fn fetch_first_segments(
             drop(permit);
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if done % 10 == 0 || done == total_files {
-                info!(progress = done, total = total_files, "fetching first segments");
+                info!(
+                    progress = done,
+                    total = total_files,
+                    "fetching first segments"
+                );
             }
             result
         });
@@ -150,7 +154,10 @@ async fn fetch_sequential(
 
         let done = index + 1;
         if done % 10 == 0 || done == total {
-            info!(progress = done, total, "fetching first segments (sequential)");
+            info!(
+                progress = done,
+                total, "fetching first segments (sequential)"
+            );
         }
     }
 
