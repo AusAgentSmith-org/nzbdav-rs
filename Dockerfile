@@ -21,7 +21,12 @@ RUN for d in core dav stream rar pipeline arr app; do \
     done && \
     echo "fn main() {}" > crates/nzbdav-app/src/main.rs
 
-# Fetch dependencies (all from crates.io — no private registry)
+# Configure forgejo cargo registry
+ARG CARGO_REGISTRIES_FORGEJO_TOKEN
+ENV CARGO_REGISTRIES_FORGEJO_TOKEN="token ${CARGO_REGISTRIES_FORGEJO_TOKEN}"
+RUN mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
+
+# Fetch dependencies
 RUN cargo fetch
 
 # Copy actual source and frontend

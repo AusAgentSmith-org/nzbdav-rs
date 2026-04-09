@@ -46,6 +46,9 @@ steps:
     image: woodpeckerci/plugin-docker-buildx
     when:
       - event: push
+    environment:
+      CARGO_REGISTRIES_FORGEJO_TOKEN:
+        from_secret: git_auth_token
     settings:
       repo: repo.indexarr.net/indexarr/nzbdav-rs
       registry: repo.indexarr.net
@@ -54,11 +57,16 @@ steps:
       password:
         from_secret: git_auth_token
       tag: latest
+      build_args_from_env:
+        - CARGO_REGISTRIES_FORGEJO_TOKEN
 
   - name: build-and-push-release
     image: woodpeckerci/plugin-docker-buildx
     when:
       - event: tag
+    environment:
+      CARGO_REGISTRIES_FORGEJO_TOKEN:
+        from_secret: git_auth_token
     settings:
       repo: repo.indexarr.net/indexarr/nzbdav-rs
       registry: repo.indexarr.net
@@ -69,6 +77,8 @@ steps:
       tag: ["${CI_COMMIT_TAG}", latest]
       build_args:
         - RELEASE_OPTIMIZED=true
+      build_args_from_env:
+        - CARGO_REGISTRIES_FORGEJO_TOKEN
 
   - name: push-ghcr
     image: quay.io/skopeo/stable
