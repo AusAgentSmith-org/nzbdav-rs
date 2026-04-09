@@ -956,7 +956,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -1369,13 +1369,13 @@ dependencies = [
 
 [[package]]
 name = "nzb-core"
-version = "0.2.3"
+version = "0.2.4"
 source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "000b572679ca51ecbb16aad696c75103615304556a0edb2343f520f9e7a7788c"
+checksum = "52589c0af44a709b928af2cdb7aa592c012ed12446951eb13a7cca1a573554e8"
 dependencies = [
  "anyhow",
  "chrono",
- "nzb-nntp 0.2.3",
+ "nzb-nntp 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot",
  "quick-xml",
  "rusqlite",
@@ -1406,9 +1406,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-nntp"
-version = "0.2.3"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38ed41d5dddc242fdbefb04f0681f86f59f939fabc3534e1e4e2215ff14d1f97"
+checksum = "f61944290dd3718fb9c1a4c4e833c18f84c59d1b012b2b855a18364fdcdfab73"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1419,6 +1419,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "serde",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tokio-rustls",
@@ -1466,7 +1467,7 @@ dependencies = [
  "http",
  "mime_guess",
  "nzb-core",
- "nzb-nntp 0.2.6",
+ "nzb-nntp 0.2.6 (sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/)",
  "nzbdav-arr",
  "nzbdav-core",
  "nzbdav-dav",
@@ -1598,7 +1599,7 @@ dependencies = [
  "bytes",
  "cbc",
  "nzb-decode",
- "nzb-nntp 0.2.6",
+ "nzb-nntp 0.2.6 (sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/)",
  "nzbdav-core",
  "parking_lot",
  "thiserror 2.0.18",
@@ -1793,7 +1794,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1830,7 +1831,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.52.0",
 ]

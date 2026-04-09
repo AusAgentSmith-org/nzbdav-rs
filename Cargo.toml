@@ -71,8 +71,8 @@ pbkdf2 = { version = "0.12", features = ["hmac"] }
 
 # Shared NZB crates (forgejo registry)
 nzb-nntp = { version = "0.2.6", registry = "forgejo" }
-nzb-core = { version = "0.2.2", registry = "forgejo" }
-nzb-decode = { version = "0.1.1", registry = "forgejo" }
+nzb-core = { version = "0.2.4", registry = "forgejo" }
+nzb-decode = { version = "0.1.2", registry = "forgejo" }
 rust-par2 = { version = "0.1.2", registry = "forgejo" }
 
 # Workspace crates (version + registry required for cargo publish)
