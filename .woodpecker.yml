@@ -18,6 +18,7 @@ steps:
         from_secret: git_auth_token
     commands:
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
+      - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
       - cargo check --workspace
 
   - name: test
@@ -27,6 +28,7 @@ steps:
         from_secret: git_auth_token
     commands:
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
+      - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
       - cargo test --workspace
 
   - name: clippy
@@ -37,6 +39,7 @@ steps:
     commands:
       - rustup component add clippy
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
+      - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
       - cargo clippy --workspace -- -D warnings
 
   - name: build-and-push
