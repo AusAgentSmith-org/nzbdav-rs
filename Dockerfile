@@ -1,5 +1,7 @@
-# Build stage
-FROM rust:1-bookworm AS builder
+FROM rust:1.88-alpine3.21 AS builder
+
+RUN apk add --no-cache musl-dev build-base openssl-dev openssl-libs-static git
+
 WORKDIR /build
 
 # Copy workspace manifests first for dependency caching
@@ -19,22 +21,26 @@ RUN for d in core dav stream rar pipeline arr app; do \
     done && \
     echo "fn main() {}" > crates/nzbdav-app/src/main.rs
 
-# Fetch dependencies (all from crates.io)
+# Fetch dependencies (all from crates.io — no private registry)
 RUN cargo fetch
 
 # Copy actual source and frontend
 COPY crates/ crates/
 COPY frontend/ frontend/
 
-# Build release binary
-RUN cargo build --release -p nzbdav-app
+# RELEASE_OPTIMIZED=true enables fat LTO + single codegen-unit (slow but smaller binary)
+ARG RELEASE_OPTIMIZED=false
 
-# Runtime stage
-FROM debian:bookworm-slim
+RUN if [ "$RELEASE_OPTIMIZED" = "true" ]; then \
+      export CARGO_PROFILE_RELEASE_LTO=fat \
+             CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+             CARGO_PROFILE_RELEASE_STRIP=symbols; \
+    fi && \
+    cargo build --release -p nzbdav-app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates curl
 
 COPY --from=builder /build/target/release/nzbdav-app /usr/local/bin/nzbdav-app
 

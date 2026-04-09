@@ -1,0 +1,111 @@
+when:
+  - event: push
+    branch: master
+  - event: tag
+  - event: manual
+
+steps:
+  - name: fmt
+    image: rust:1.88-bookworm
+    commands:
+      - rustup component add rustfmt
+      - cargo fmt --all -- --check
+
+  - name: check
+    image: rust:1.88-bookworm
+    commands:
+      - cargo check --workspace
+
+  - name: test
+    image: rust:1.88-bookworm
+    commands:
+      - cargo test --workspace
+
+  - name: clippy
+    image: rust:1.88-bookworm
+    commands:
+      - rustup component add clippy
+      - cargo clippy --workspace -- -D warnings
+
+  - name: build-and-push
+    image: woodpeckerci/plugin-docker-buildx
+    when:
+      - event: push
+    settings:
+      repo: repo.indexarr.net/indexarr/nzbdav-rs
+      registry: repo.indexarr.net
+      username:
+        from_secret: git_auth_token
+      password:
+        from_secret: git_auth_token
+      tag: latest
+
+  - name: build-and-push-release
+    image: woodpeckerci/plugin-docker-buildx
+    when:
+      - event: tag
+    settings:
+      repo: repo.indexarr.net/indexarr/nzbdav-rs
+      registry: repo.indexarr.net
+      username:
+        from_secret: git_auth_token
+      password:
+        from_secret: git_auth_token
+      tag: ["${CI_COMMIT_TAG}", latest]
+      build_args:
+        - RELEASE_OPTIMIZED=true
+
+  - name: push-ghcr
+    image: quay.io/skopeo/stable
+    when:
+      - event: tag
+    environment:
+      GH_TOKEN:
+        from_secret: gh_release_token
+      FORGEJO_TOKEN:
+        from_secret: git_auth_token
+    commands:
+      - SRC="docker://repo.indexarr.net/indexarr/nzbdav-rs:$CI_COMMIT_TAG"
+      - SRC_CREDS="--src-creds=$FORGEJO_TOKEN:$FORGEJO_TOKEN"
+      - DST_CREDS="--dest-creds=AusAgentSmith:$GH_TOKEN"
+      - for tag in $CI_COMMIT_TAG latest; do skopeo copy $SRC_CREDS $DST_CREDS $SRC "docker://ghcr.io/ausagentsmith-org/nzbdav-rs:$tag"; done
+
+  - name: discord-success
+    image: alpine/curl
+    environment:
+      DISCORD_WEBHOOK_URL:
+        from_secret: discord_webhook_url
+    commands:
+      - |
+        HASH=$(echo $CI_COMMIT_SHA | head -c 7)
+        curl -sf -H "Content-Type: application/json" -d "{
+          \"embeds\": [{
+            \"title\": \"Build Successful\",
+            \"description\": \"**${CI_REPO}** — [$HASH]($CI_REPO_URL/commit/$CI_COMMIT_SHA)\",
+            \"color\": 5025616,
+            \"footer\": {\"text\": \"$CI_REPO • $CI_COMMIT_AUTHOR\"},
+            \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+          }]
+        }" "$DISCORD_WEBHOOK_URL" || true
+    when:
+      - status: [success]
+
+  - name: discord-failure
+    image: alpine/curl
+    environment:
+      DISCORD_WEBHOOK_URL:
+        from_secret: discord_webhook_url
+    commands:
+      - |
+        HASH=$(echo $CI_COMMIT_SHA | head -c 7)
+        curl -sf -H "Content-Type: application/json" -d "{
+          \"embeds\": [{
+            \"title\": \"Build Failed\",
+            \"description\": \"**${CI_REPO}** — [$HASH]($CI_REPO_URL/commit/$CI_COMMIT_SHA)\",
+            \"color\": 15548997,
+            \"footer\": {\"text\": \"$CI_REPO • $CI_COMMIT_AUTHOR\"},
+            \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+          }]
+        }" "$DISCORD_WEBHOOK_URL" || true
+    when:
+      - status: [failure]
