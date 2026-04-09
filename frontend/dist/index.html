@@ -123,6 +123,29 @@ select.form-input{cursor:pointer}
 .section{display:none}
 .section.visible{display:block}
 
+/* Video player modal */
+.video-overlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:2000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.video-overlay.open{opacity:1;pointer-events:auto}
+.video-container{position:relative;width:90vw;max-width:1200px;max-height:90vh;display:flex;flex-direction:column;align-items:center}
+.video-title{color:#fff;font-size:13px;margin-bottom:10px;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.video-container video{width:100%;max-height:calc(90vh - 50px);border-radius:8px;background:#000;outline:none}
+.video-close{position:absolute;top:-36px;right:0;background:none;border:none;color:#fff;font-size:28px;cursor:pointer;padding:4px 8px;opacity:.7;transition:opacity .15s;line-height:1}
+.video-close:hover{opacity:1}
+.video-error{color:var(--amber);font-size:12px;margin-top:10px;text-align:center}
+.play-btn{color:var(--green);cursor:pointer;margin-left:6px;font-size:12px;opacity:.7;transition:opacity .1s;border:none;background:none;font-family:inherit;padding:0}
+.play-btn:hover{opacity:1}
+.file-cb{width:14px;height:14px;cursor:pointer;accent-color:var(--accent)}
+.bulk-bar{display:none;padding:10px 20px;background:rgba(239,68,68,.08);border-bottom:1px solid var(--border);font-size:12px;align-items:center;gap:10px}
+.bulk-bar.visible{display:flex}
+
+/* Upload modal */
+.upload-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.upload-overlay.open{opacity:1;pointer-events:auto}
+.upload-modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:90vw;max-width:520px;position:relative}
+.upload-modal h2{font-size:14px;margin-bottom:16px}
+.upload-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;line-height:1}
+.upload-close:hover{color:var(--text)}
+
 /* Responsive */
 @media(max-width:768px){
   aside{width:56px}
@@ -144,10 +167,6 @@ select.form-input{cursor:pointer}
       <span>Queue</span>
       <span class="nav-badge" id="queue-badge">0</span>
     </a>
-    <a class="nav-item" data-tab="history">
-      <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-      <span>History</span>
-    </a>
     <a class="nav-item" data-tab="files">
       <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
       <span>Files</span>
@@ -155,7 +174,7 @@ select.form-input{cursor:pointer}
   </div>
   <div class="nav-group" style="margin-top:16px">
     <div class="nav-label">Actions</div>
-    <a class="nav-item" data-tab="upload">
+    <a class="nav-item" onclick="openUploadModal()">
       <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
       <span>Upload NZB</span>
     </a>
@@ -195,7 +214,7 @@ select.form-input{cursor:pointer}
   </div>
 
   <div class="content">
-    <!-- QUEUE -->
+    <!-- QUEUE + HISTORY -->
     <div id="queue" class="section visible">
       <div class="grid">
         <div class="metric"><div class="label">In Queue</div><div class="val" id="m-queue">0</div><div class="sub" id="m-queue-sub">-</div></div>
@@ -210,14 +229,10 @@ select.form-input{cursor:pointer}
         </table>
         <div id="queue-empty" class="empty" style="display:none"><p>Queue is empty</p></div>
       </div>
-    </div>
-
-    <!-- HISTORY -->
-    <div id="history" class="section">
       <div class="panel">
-        <div class="panel-head"><h2>History</h2><span class="mono" id="history-count"></span></div>
+        <div class="panel-head"><h2>History</h2><div style="display:flex;align-items:center;gap:10px"><span class="mono" id="history-count"></span><button class="btn btn-sm btn-danger" onclick="clearHistory()">Clear All</button></div></div>
         <table>
-          <thead><tr><th>Name</th><th>Category</th><th>Size</th><th>Status</th><th>Completed</th><th style="width:80px"></th></tr></thead>
+          <thead><tr><th>Name</th><th>Category</th><th>Size</th><th>Status</th><th>Completed</th><th style="width:160px"></th></tr></thead>
           <tbody id="history-body"></tbody>
         </table>
         <div id="history-empty" class="empty" style="display:none"><p>No history yet</p></div>
@@ -229,40 +244,20 @@ select.form-input{cursor:pointer}
       <div id="files-breadcrumb" class="breadcrumb"></div>
       <div class="panel">
         <div class="panel-head"><h2>Virtual Filesystem</h2></div>
+        <div class="bulk-bar" id="files-bulk-bar">
+          <span id="files-sel-count">0 selected</span>
+          <button class="btn btn-sm btn-danger" onclick="deleteSelected()">Delete Selected</button>
+          <button class="btn btn-sm" onclick="clearSelection()">Cancel</button>
+        </div>
         <table>
-          <thead><tr><th>Name</th><th>Type</th><th>Size</th></tr></thead>
+          <thead><tr><th id="files-cb-th" style="width:30px;display:none"><input type="checkbox" class="file-cb" id="files-select-all" onchange="toggleSelectAll(this.checked)"></th><th>Name</th><th>Type</th><th>Size</th><th style="width:80px"></th></tr></thead>
           <tbody id="files-body"></tbody>
         </table>
         <div id="files-empty" class="empty" style="display:none"><p>Empty directory</p></div>
       </div>
     </div>
 
-    <!-- UPLOAD -->
-    <div id="upload" class="section">
-      <div class="panel" style="padding:24px">
-        <div class="drop-zone" id="drop-zone">
-          <div class="dz-icon">+</div>
-          <p>Drop NZB files here or click to browse</p>
-        </div>
-        <input type="file" id="file-input" accept=".nzb" multiple hidden>
-        <div id="upload-list" style="margin-top:16px"></div>
-        <div style="display:flex;gap:16px;align-items:flex-end;margin-top:20px">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Category</label>
-            <select class="form-input" id="upload-cat" style="width:140px"></select>
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Priority</label>
-            <select class="form-input" id="upload-priority" style="width:120px">
-              <option value="-1">Low</option>
-              <option value="0" selected>Normal</option>
-              <option value="1">High</option>
-              <option value="2">Force</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- UPLOAD is now a modal, see below -->
 
     <!-- SERVERS -->
     <div id="servers" class="section">
@@ -392,6 +387,45 @@ select.form-input{cursor:pointer}
   </div>
 </div>
 
+<!-- Upload Modal -->
+<div class="upload-overlay" id="upload-overlay" onclick="if(event.target===this)closeUploadModal()">
+  <div class="upload-modal">
+    <button class="upload-close" onclick="closeUploadModal()" title="Close (Esc)">&times;</button>
+    <h2>Upload NZB</h2>
+    <div class="drop-zone" id="drop-zone">
+      <div class="dz-icon">+</div>
+      <p>Drop NZB files here or click to browse</p>
+    </div>
+    <input type="file" id="file-input" accept=".nzb" multiple hidden>
+    <div id="upload-list" style="margin-top:16px"></div>
+    <div style="display:flex;gap:16px;align-items:flex-end;margin-top:20px">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Category</label>
+        <select class="form-input" id="upload-cat" style="width:140px"></select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Priority</label>
+        <select class="form-input" id="upload-priority" style="width:120px">
+          <option value="0">Low</option>
+          <option value="1" selected>Normal</option>
+          <option value="2">High</option>
+          <option value="3">Force</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Video Player Modal -->
+<div class="video-overlay" id="video-overlay" onclick="if(event.target===this)closeVideo()">
+  <div class="video-container">
+    <button class="video-close" onclick="closeVideo()" title="Close (Esc)">&times;</button>
+    <div class="video-title" id="video-title"></div>
+    <video id="video-player" controls preload="metadata"></video>
+    <div class="video-error" id="video-error" style="display:none">This format may not be supported by your browser. Try downloading the file instead.</div>
+  </div>
+</div>
+
 <div class="toast-container" id="toasts"></div>
 
 <script>
@@ -449,11 +483,10 @@ function switchTab(tab) {
   $$('.nav-item').forEach(a => a.classList.remove('active'));
   const navEl = document.querySelector(`.nav-item[data-tab="${tab}"]`);
   if (navEl) navEl.classList.add('active');
-  const titles = { queue:'Queue', history:'History', files:'Files', upload:'Upload NZB', servers:'Servers', logs:'Logs', settings:'Settings' };
+  const titles = { queue:'Queue', files:'Files', servers:'Servers', logs:'Logs', settings:'Settings' };
   $('#page-title').textContent = titles[tab] || tab;
   // Refresh on tab switch
-  if (tab === 'queue') loadQueue();
-  if (tab === 'history') loadHistory();
+  if (tab === 'queue') { loadQueue(); loadHistory(); }
   if (tab === 'files') loadFiles(filesPath);
   if (tab === 'servers') loadServers();
   if (tab === 'logs') loadLogs();
@@ -463,7 +496,7 @@ function switchTab(tab) {
 $$('.nav-item[data-tab]').forEach(el => {
   el.addEventListener('click', () => switchTab(el.dataset.tab));
 });
-$('#topbar-upload-btn').addEventListener('click', () => switchTab('upload'));
+$('#topbar-upload-btn').addEventListener('click', () => openUploadModal());
 
 // --- Queue ---
 async function loadQueue() {
@@ -486,20 +519,19 @@ async function loadQueue() {
       tbody.parentElement.querySelector('thead').style.display = '';
       q.slots.forEach(s => {
         const tag = s.status === 'Queued' ? 'tag-queue' : 'tag-proc';
+        const label = s.status === 'Processing' ? 'Processing' : s.status;
         tbody.innerHTML += `<tr>
           <td>${esc(s.filename)}</td>
           <td class="mono">${esc(s.cat)}</td>
           <td class="mono">${s.mb} MB</td>
           <td>${esc(s.priority)}</td>
-          <td><span class="tag ${tag}">${esc(s.status)}</span></td>
+          <td><span class="tag ${tag}">${esc(label)}</span></td>
           <td><button class="btn btn-sm btn-danger" onclick="removeQueue('${s.nzo_id}')">Remove</button></td>
         </tr>`;
       });
     }
-    // Also update history counts
-    const hData = await api('history', { limit: 0 });
-    const total = hData.history.noofslots;
-    $('#m-completed').textContent = total;
+    // Also refresh history panel and update counts
+    loadHistory();
   } catch (e) {
     console.error('loadQueue', e);
   }
@@ -531,16 +563,18 @@ async function loadHistory() {
         if (s.status === 'Failed') failed++;
         const tag = s.status === 'Completed' ? 'tag-ok' : 'tag-fail';
         const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="event.stopPropagation();retryHistory('${s.nzo_id}')">Retry</button> ` : '';
+        const playBtn = s.status === 'Completed' && s.storage ? `<button class="play-btn" onclick="event.stopPropagation();browseAndPlay('${esc(s.storage)}')" title="Browse files">&#9654; Play</button> ` : '';
         tbody.innerHTML += `<tr style="cursor:pointer" onclick="showLogsFor('${esc(s.name)}')" title="Click to view logs">
           <td>${esc(s.name)}</td>
           <td class="mono">${esc(s.category)}</td>
           <td class="mono">${formatBytes(s.bytes)}</td>
           <td><span class="tag ${tag}">${esc(s.status)}</span></td>
           <td class="mono">${timeAgo(s.completed)}</td>
-          <td>${retryBtn}<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeHistory('${s.nzo_id}')">Delete</button></td>
+          <td>${playBtn}${retryBtn}<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();removeHistory('${s.nzo_id}')">Delete</button></td>
         </tr>`;
       });
     }
+    $('#m-completed').textContent = h.noofslots - failed;
     $('#m-failed').textContent = failed;
   } catch (e) {
     console.error('loadHistory', e);
@@ -550,6 +584,13 @@ async function loadHistory() {
 async function removeHistory(id) {
   await api('history', { name: 'delete', value: id });
   toast('Removed from history');
+  loadHistory();
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all history?')) return;
+  await api('history', { name: 'delete', value: 'all' });
+  toast('History cleared');
   loadHistory();
 }
 
@@ -630,26 +671,85 @@ function renderFiles(xml, path) {
   } else {
     empty.style.display = 'none';
     tbody.parentElement.querySelector('thead').style.display = '';
+    const inContent = path.startsWith('/content/') || path === '/content/';
+    $('#files-cb-th').style.display = inContent ? '' : 'none';
+    $('#files-select-all').checked = false;
+    $('#files-bulk-bar').classList.remove('visible');
     items.forEach(f => {
+      const cb = inContent ? `<td><input type="checkbox" class="file-cb" data-href="${esc(f.href)}" onchange="updateBulkBar()"></td>` : '';
       if (f.isCol) {
         tbody.innerHTML += `<tr>
+          ${cb}
           <td><span class="dir-link" onclick="loadFiles('${esc(f.href)}')">${esc(f.name)}/</span></td>
           <td class="mono">directory</td>
+          <td></td>
           <td></td>
         </tr>`;
       } else {
         const downloadUrl = DAV + f.href;
+        const isVideo = /\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i.test(f.name);
+        const playBtn = isVideo ? ` <button class="play-btn" onclick="event.preventDefault();playVideo('${esc(downloadUrl)}','${esc(f.name)}')" title="Play video">&#9654; Play</button>` : '';
         tbody.innerHTML += `<tr>
-          <td><a class="file-link" href="${esc(downloadUrl)}" target="_blank">${esc(f.name)}</a></td>
+          ${cb}
+          <td><a class="file-link" href="${esc(downloadUrl)}" target="_blank">${esc(f.name)}</a>${playBtn}</td>
           <td class="mono">${esc(f.contentType || 'file')}</td>
           <td class="mono">${formatBytes(f.size)}</td>
+          <td></td>
         </tr>`;
       }
     });
   }
 }
 
-// --- Upload ---
+// --- File selection & bulk delete ---
+function getCheckedHrefs() {
+  return Array.from($$('#files-body .file-cb:checked')).map(cb => cb.dataset.href);
+}
+
+function updateBulkBar() {
+  const checked = getCheckedHrefs();
+  const bar = $('#files-bulk-bar');
+  if (checked.length > 0) {
+    bar.classList.add('visible');
+    $('#files-sel-count').textContent = checked.length + ' selected';
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+function toggleSelectAll(checked) {
+  $$('#files-body .file-cb').forEach(cb => cb.checked = checked);
+  updateBulkBar();
+}
+
+function clearSelection() {
+  $('#files-select-all').checked = false;
+  toggleSelectAll(false);
+}
+
+async function deleteSelected() {
+  const hrefs = getCheckedHrefs();
+  if (hrefs.length === 0) return;
+  if (!confirm('Delete ' + hrefs.length + ' item(s)?')) return;
+  let ok = 0, fail = 0;
+  for (const href of hrefs) {
+    try {
+      const r = await fetch(DAV + href, { method: 'DELETE' });
+      if (r.ok) ok++; else fail++;
+    } catch { fail++; }
+  }
+  toast('Deleted ' + ok + (fail > 0 ? ', ' + fail + ' failed' : ''));
+  loadFiles(filesPath);
+}
+
+// --- Upload Modal ---
+function openUploadModal() {
+  $('#upload-overlay').classList.add('open');
+}
+function closeUploadModal() {
+  $('#upload-overlay').classList.remove('open');
+}
+
 const dropZone = $('#drop-zone');
 const fileInput = $('#file-input');
 
@@ -960,7 +1060,7 @@ function connectWs() {
           if (currentTab === 'queue') loadQueue();
         }
         if (ev.type === 'History') {
-          if (currentTab === 'history') loadHistory();
+          if (currentTab === 'queue') loadHistory();
         }
         if (ev.type === 'Log') {
           addLogLine(ev);
@@ -988,9 +1088,69 @@ function esc(s) {
 
 // --- Auto-refresh active tab every 3s ---
 setInterval(() => {
-  if (currentTab === 'queue') loadQueue();
-  if (currentTab === 'history') loadHistory();
+  if (currentTab === 'queue') { loadQueue(); loadHistory(); }
 }, 3000);
+
+// --- Browse & Play (from history) ---
+async function browseAndPlay(storagePath) {
+  const davPath = storagePath;
+  try {
+    const r = await fetch(DAV + davPath, {
+      method: 'PROPFIND',
+      headers: { 'Depth': '1', 'Content-Type': 'application/xml' }
+    });
+    const xml = await r.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'application/xml');
+    const responses = doc.querySelectorAll('response');
+    // Find first video file
+    for (const resp of responses) {
+      const href = resp.querySelector('href')?.textContent || '';
+      const name = resp.querySelector('displayname')?.textContent || href.split('/').pop() || '';
+      if (/\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i.test(name)) {
+        playVideo(DAV + href, name);
+        return;
+      }
+    }
+    // No video found — navigate to files tab instead
+    filesPath = davPath + '/';
+    switchTab('files');
+  } catch (e) {
+    toast('Could not browse files: ' + e.message, false);
+  }
+}
+
+// --- Video Player ---
+function playVideo(url, name) {
+  const overlay = $('#video-overlay');
+  const player = $('#video-player');
+  const error = $('#video-error');
+  $('#video-title').textContent = name;
+  error.style.display = 'none';
+  player.src = url;
+  overlay.classList.add('open');
+  player.play().catch(() => {});
+}
+
+function closeVideo() {
+  const overlay = $('#video-overlay');
+  const player = $('#video-player');
+  player.pause();
+  player.removeAttribute('src');
+  player.load();
+  overlay.classList.remove('open');
+}
+
+$('#video-player').addEventListener('error', () => {
+  $('#video-error').style.display = '';
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if ($('#video-overlay').classList.contains('open')) closeVideo();
+    if ($('#upload-overlay').classList.contains('open')) closeUploadModal();
+  }
+});
 
 // --- Init ---
 loadQueue();

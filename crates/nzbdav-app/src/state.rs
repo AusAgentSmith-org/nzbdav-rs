@@ -4,6 +4,9 @@ use nzbdav_core::config::ConfigManager;
 use nzbdav_stream::provider::UsenetArticleProvider;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use tokio::sync::watch;
+
+use crate::queue_manager::QueueStatus;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -13,4 +16,5 @@ pub struct AppState {
     pub config: ConfigManager,
     pub provider: Arc<UsenetArticleProvider>,
     pub version: &'static str,
+    pub queue_status: watch::Receiver<QueueStatus>,
 }

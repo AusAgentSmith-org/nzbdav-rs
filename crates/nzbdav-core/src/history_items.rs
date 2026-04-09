@@ -85,6 +85,11 @@ pub fn delete(conn: &Connection, id: Uuid) -> Result<()> {
     Ok(())
 }
 
+pub fn delete_all(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM history_items", [])?;
+    Ok(())
+}
+
 pub fn count(conn: &Connection) -> Result<i64> {
     let c: i64 = conn.query_row("SELECT COUNT(*) FROM history_items", [], |row| row.get(0))?;
     Ok(c)

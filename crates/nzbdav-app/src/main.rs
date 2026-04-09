@@ -68,24 +68,13 @@ async fn main() -> anyhow::Result<()> {
     // 4. Usenet provider
     let provider = Arc::new(UsenetArticleProvider::new(vec![]));
 
-    // 5. Build shared state
-    let app_state = AppState {
-        db: db.clone(),
-        config: config.clone(),
-        provider: provider.clone(),
-        version: env!("CARGO_PKG_VERSION"),
-    };
-
     let dav_store = Arc::new(DatabaseStore::new(
         db.clone(),
         provider.clone(),
         config.get_article_buffer_size(),
     ));
 
-    // 6. Load saved server configs
-    server_api::init_pools_from_config(&app_state);
-
-    // 7. Background tasks
+    // 5. Background tasks
     let cancel = CancellationToken::new();
 
     let qm_db_path = cli.db_path.clone();
@@ -95,6 +84,18 @@ async fn main() -> anyhow::Result<()> {
         config.clone(),
         cancel.clone(),
     );
+
+    // 6. Build shared state
+    let app_state = AppState {
+        db: db.clone(),
+        config: config.clone(),
+        provider: provider.clone(),
+        version: env!("CARGO_PKG_VERSION"),
+        queue_status: qm_status_rx.clone(),
+    };
+
+    // 7. Load saved server configs
+    server_api::init_pools_from_config(&app_state);
 
     // 8. WebSocket + status broadcaster
     let ws_manager = websocket::WebSocketManager::new();

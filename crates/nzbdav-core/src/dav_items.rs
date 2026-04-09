@@ -55,7 +55,7 @@ const COLUMNS: &str = "id, id_prefix, created_at, parent_id, name, file_size, ty
 
 pub fn insert(conn: &Connection, item: &DavItem) -> Result<()> {
     conn.execute(
-        &format!("INSERT INTO dav_items ({COLUMNS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"),
+        &format!("INSERT OR REPLACE INTO dav_items ({COLUMNS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"),
         params![
             item.id.to_string(),
             item.id_prefix,

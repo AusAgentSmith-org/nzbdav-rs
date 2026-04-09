@@ -173,11 +173,13 @@ mod tests {
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
+        let (_, queue_status) = tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
         AppState {
             db,
             config,
             provider,
             version: "0.1.0-test",
+            queue_status,
         }
     }
 

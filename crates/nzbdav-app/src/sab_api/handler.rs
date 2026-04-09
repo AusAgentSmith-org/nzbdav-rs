@@ -8,7 +8,7 @@ use uuid::Uuid;
 use nzb_core::nzb_parser::parse_nzb;
 use nzbdav_core::blob_store::BlobStore;
 use nzbdav_core::models::{DownloadStatus, QueueItem};
-use nzbdav_core::{history_items, queue_items};
+use nzbdav_core::{dav_items, history_items, queue_items};
 
 use crate::state::AppState;
 
@@ -381,16 +381,22 @@ fn handle_queue(
             }).unwrap());
         }
     };
+    let qs = state.queue_status.borrow();
     let slots: Vec<QueueSlot> = items
         .iter()
         .map(|item| {
             let mb = format!("{:.2}", item.total_segment_bytes as f64 / 1_048_576.0);
+            let status = if qs.active_ids.contains(&item.id) {
+                "Processing".to_string()
+            } else {
+                "Queued".to_string()
+            };
             QueueSlot {
                 nzo_id: item.id.to_string(),
                 filename: item.job_name.clone(),
                 cat: item.category.clone(),
                 priority: priority_to_string(item.priority),
-                status: "Queued".to_string(),
+                status,
                 mb,
                 mbleft: "0.00".to_string(),
                 percentage: "100".to_string(),
@@ -398,6 +404,7 @@ fn handle_queue(
             }
         })
         .collect();
+    drop(qs);
 
     let page_count = slots.len();
     // SABnzbd-compatible queue with all fields Sonarr expects
@@ -432,21 +439,31 @@ fn handle_history(
     // Delete action.
     if params.name.as_deref() == Some("delete") {
         if let Some(value) = &params.value {
-            let id = match Uuid::parse_str(value) {
-                Ok(id) => id,
-                Err(_) => {
+            if value == "all" {
+                if let Err(e) = history_items::delete_all(&conn) {
+                    warn!(error = %e, "failed to clear history");
                     return Json(serde_json::to_value(SimpleResponse {
                         status: false,
-                        error: Some("invalid id".to_string()),
+                        error: Some(format!("database error: {e}")),
                     }).unwrap());
                 }
-            };
-            if let Err(e) = history_items::delete(&conn, id) {
-                warn!(error = %e, %id, "failed to delete history item");
-                return Json(serde_json::to_value(SimpleResponse {
-                    status: false,
-                    error: Some(format!("database error: {e}")),
-                }).unwrap());
+            } else {
+                let id = match Uuid::parse_str(value) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        return Json(serde_json::to_value(SimpleResponse {
+                            status: false,
+                            error: Some("invalid id".to_string()),
+                        }).unwrap());
+                    }
+                };
+                if let Err(e) = history_items::delete(&conn, id) {
+                    warn!(error = %e, %id, "failed to delete history item");
+                    return Json(serde_json::to_value(SimpleResponse {
+                        status: false,
+                        error: Some(format!("database error: {e}")),
+                    }).unwrap());
+                }
             }
         }
         return Json(serde_json::to_value(SimpleResponse {
@@ -486,6 +503,11 @@ fn handle_history(
                 DownloadStatus::Completed => "Completed",
                 DownloadStatus::Failed => "Failed",
             };
+            let storage = item
+                .download_dir_id
+                .and_then(|id| dav_items::get_by_id(&conn, id).ok().flatten())
+                .map(|dav| dav.path)
+                .unwrap_or_default();
             HistorySlot {
                 nzo_id: item.id.to_string(),
                 name: item.job_name.clone(),
@@ -495,10 +517,7 @@ fn handle_history(
                 bytes: item.total_segment_bytes,
                 download_time: item.download_time_seconds,
                 completed: item.created_at.and_utc().timestamp(),
-                storage: item
-                    .download_dir_id
-                    .map(|id| format!("/webdav/{id}"))
-                    .unwrap_or_default(),
+                storage,
             }
         })
         .collect();
@@ -673,11 +692,13 @@ mod tests {
         let db = Arc::new(parking_lot::Mutex::new(conn));
         let config = nzbdav_core::config::ConfigManager::new();
         let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
+        let (_, queue_status) = tokio::sync::watch::channel(crate::queue_manager::QueueStatus::default());
         AppState {
             db,
             config,
             provider,
             version: "0.1.0-test",
+            queue_status,
         }
     }
 

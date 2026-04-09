@@ -21,6 +21,7 @@ use nzbdav_stream::UsenetArticleProvider;
 pub struct QueueStatus {
     pub is_processing: bool,
     pub current_job: Option<String>,
+    pub active_ids: HashSet<Uuid>,
     pub items_processed: u64,
     pub last_error: Option<String>,
 }
@@ -74,6 +75,7 @@ async fn run_loop(
             match result {
                 Ok(id) => {
                     active_ids.remove(&id);
+                    status_tx.send_modify(|s| { s.active_ids.remove(&id); });
                 }
                 Err(e) => {
                     error!(error = %e, "queue task panicked");
@@ -86,6 +88,7 @@ async fn run_loop(
             status_tx.send_modify(|s| {
                 s.is_processing = false;
                 s.current_job = None;
+                s.active_ids.clear();
             });
         }
 
@@ -119,6 +122,7 @@ async fn run_loop(
                     status_tx.send_modify(|s| {
                         s.is_processing = true;
                         s.current_job = Some(job_name.clone());
+                        s.active_ids.insert(item_id);
                     });
 
                     let db_path = db_path.clone();
@@ -148,6 +152,7 @@ async fn run_loop(
                 match result {
                     Ok(id) => {
                         active_ids.remove(&id);
+                        status_tx.send_modify(|s| { s.active_ids.remove(&id); });
                     }
                     Err(e) => {
                         error!(error = %e, "queue task panicked");
@@ -200,6 +205,7 @@ async fn process_single_item(
                 &item,
                 DownloadStatus::Failed,
                 Some(format!("NZB blob not found: {e}")),
+                None,
             );
             status_tx.send_modify(|s| {
                 s.last_error = Some(e.to_string());
@@ -214,7 +220,7 @@ async fn process_single_item(
     match result {
         Ok(pr) => {
             info!(job_name = %job_name, items_created = pr.items_created, "processed successfully");
-            move_to_history(&conn, &item, DownloadStatus::Completed, None);
+            move_to_history(&conn, &item, DownloadStatus::Completed, None, Some(pr.job_dir_id));
             status_tx.send_modify(|s| {
                 s.items_processed += 1;
                 s.last_error = None;
@@ -230,7 +236,7 @@ async fn process_single_item(
                 }
             } else {
                 error!(job_name = %job_name, error = %e, "non-retryable error — failing");
-                move_to_history(&conn, &item, DownloadStatus::Failed, Some(e.to_string()));
+                move_to_history(&conn, &item, DownloadStatus::Failed, Some(e.to_string()), None);
             }
             status_tx.send_modify(|s| {
                 s.last_error = Some(e.to_string());
@@ -244,6 +250,7 @@ fn move_to_history(
     item: &QueueItem,
     status: DownloadStatus,
     fail_message: Option<String>,
+    download_dir_id: Option<Uuid>,
 ) {
     let history = HistoryItem {
         id: Uuid::new_v4(),
@@ -255,7 +262,7 @@ fn move_to_history(
         total_segment_bytes: item.total_segment_bytes,
         download_time_seconds: 0,
         fail_message,
-        download_dir_id: None,
+        download_dir_id,
         nzb_blob_id: Some(item.id),
     };
 
