@@ -104,11 +104,7 @@ pub async fn process_rar_files(
             drop(permit);
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if done.is_multiple_of(10) || done == total_rar {
-                info!(
-                    progress = done,
-                    total = total_rar,
-                    "parsing RAR headers"
-                );
+                info!(progress = done, total = total_rar, "parsing RAR headers");
             }
             (file_index, resolved_name, segment_ids, result)
         });
@@ -235,11 +231,7 @@ async fn fetch_and_parse_rar(
         data.extend_from_slice(&segment_data);
     }
 
-    debug!(
-        file_index,
-        bytes = data.len(),
-        "parsing RAR headers"
-    );
+    debug!(file_index, bytes = data.len(), "parsing RAR headers");
 
     // Parse RAR headers (sync I/O, run on blocking thread).
     let pw = password.map(String::from);
