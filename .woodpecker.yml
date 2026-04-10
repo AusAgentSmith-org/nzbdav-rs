@@ -115,10 +115,9 @@ steps:
         git remote add github "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" 2>/dev/null || true
         git push github "refs/tags/$TAG" --force
 
-        BODY="## Docker Images\n\n"
-        BODY="$BODY- \`ghcr.io/ausagentsmith-org/nzbdav-rs:${TAG}\`\n"
-        BODY="$BODY- \`docker.io/ausagentsmith/nzbdav-rs:${TAG}\`\n"
-        PAYLOAD="{\"tag_name\":\"$TAG\",\"name\":\"nzbdav-rs $TAG\",\"body\":\"$(echo -e "$BODY")\",\"draft\":false,\"prerelease\":false}"
+        BODY=$(printf "## Docker Images\n\n- \`ghcr.io/ausagentsmith-org/nzbdav-rs:%s\`\n- \`docker.io/ausagentsmith/nzbdav-rs:%s\`\n" "$TAG" "$TAG")
+        PAYLOAD=$(jq -n --arg tag "$TAG" --arg name "nzbdav-rs $TAG" --arg body "$BODY" \
+          '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
 
         # Try create; if release already exists (422), update it
         HTTP_CODE=$(curl -s -o /tmp/release.json -w "%{http_code}" -X POST \
