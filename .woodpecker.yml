@@ -107,6 +107,8 @@ steps:
       - |
         TAG="$CI_COMMIT_TAG"
         REPO="AusAgentSmith-org/nzbdav-rs"
+        API="https://api.github.com/repos/$REPO/releases"
+        AUTH="Authorization: token $GH_TOKEN"
         echo "Creating GitHub release $TAG on $REPO"
 
         git fetch --unshallow origin 2>/dev/null || true
@@ -116,14 +118,26 @@ steps:
         BODY="## Docker Images\n\n"
         BODY="$BODY- \`ghcr.io/ausagentsmith-org/nzbdav-rs:${TAG}\`\n"
         BODY="$BODY- \`docker.io/ausagentsmith/nzbdav-rs:${TAG}\`\n"
+        PAYLOAD="{\"tag_name\":\"$TAG\",\"name\":\"nzbdav-rs $TAG\",\"body\":\"$(echo -e "$BODY")\",\"draft\":false,\"prerelease\":false}"
 
-        curl -sf -X POST \
-          -H "Authorization: token $GH_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "{\"tag_name\":\"$TAG\",\"name\":\"nzbdav-rs $TAG\",\"body\":\"$(echo -e "$BODY")\",\"draft\":false,\"prerelease\":false}" \
-          "https://api.github.com/repos/$REPO/releases" > /dev/null
+        # Try create; if release already exists (422), update it
+        HTTP_CODE=$(curl -s -o /tmp/release.json -w "%{http_code}" -X POST \
+          -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$PAYLOAD" "$API")
 
-        echo "GitHub release $TAG created"
+        if [ "$HTTP_CODE" = "201" ]; then
+          echo "GitHub release $TAG created"
+        elif [ "$HTTP_CODE" = "422" ]; then
+          echo "Release exists, updating..."
+          RELEASE_ID=$(curl -sf -H "$AUTH" "$API/tags/$TAG" | jq -r '.id')
+          curl -sf -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
+            -d "$PAYLOAD" "$API/$RELEASE_ID" > /dev/null
+          echo "GitHub release $TAG updated"
+        else
+          echo "Failed to create release (HTTP $HTTP_CODE):"
+          cat /tmp/release.json
+          exit 1
+        fi
 
   - name: push-github
     image: alpine/git
