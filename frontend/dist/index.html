@@ -71,6 +71,7 @@ tr:hover td{background:rgba(124,92,252,.03)}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500}
 .tag-ok{background:rgba(34,197,94,.12);color:var(--green)}
 .tag-fail{background:rgba(239,68,68,.12);color:var(--red)}
+.fail-reason{font-size:11px;color:var(--red);margin-top:3px;opacity:.85}
 .tag-proc{background:rgba(245,158,11,.12);color:var(--amber)}
 .tag-queue{background:rgba(59,130,246,.12);color:var(--blue)}
 
@@ -568,8 +569,9 @@ async function loadHistory() {
         const tag = s.status === 'Completed' ? 'tag-ok' : 'tag-fail';
         const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="event.stopPropagation();retryHistory('${s.nzo_id}')">Retry</button> ` : '';
         const playBtn = s.status === 'Completed' && s.storage ? `<button class="play-btn" onclick="event.stopPropagation();browseAndPlay('${esc(s.storage)}')" title="Browse files">&#9654; Play</button> ` : '';
+        const failReason = s.status === 'Failed' && s.fail_message ? `<div class="fail-reason">${esc(s.fail_message)}</div>` : '';
         tbody.innerHTML += `<tr style="cursor:pointer" onclick="showLogsFor('${esc(s.name)}')" title="Click to view logs">
-          <td>${esc(s.name)}</td>
+          <td>${esc(s.name)}${failReason}</td>
           <td class="mono">${esc(s.category)}</td>
           <td class="mono">${formatBytes(s.bytes)}</td>
           <td><span class="tag ${tag}">${esc(s.status)}</span></td>
