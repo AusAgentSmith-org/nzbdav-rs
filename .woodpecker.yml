@@ -3,6 +3,7 @@ when:
     branch: master
   - event: tag
   - event: manual
+  - event: pull_request
 
 steps:
   - name: fmt

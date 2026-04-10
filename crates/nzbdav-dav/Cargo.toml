@@ -23,5 +23,11 @@ tokio-util = { version = "0.7", features = ["io"] }
 mime_guess = "2"
 percent-encoding = "2"
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tower = { workspace = true, features = ["util"] }
+async-trait = { workspace = true }
+http-body-util = "0.1"
+
 [lints]
 workspace = true

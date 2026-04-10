@@ -1535,11 +1535,13 @@ dependencies = [
 name = "nzbdav-dav"
 version = "0.4.1"
 dependencies = [
+ "async-trait",
  "axum",
  "bincode",
  "bytes",
  "chrono",
  "http",
+ "http-body-util",
  "mime_guess",
  "nzbdav-core",
  "nzbdav-stream",
@@ -1549,6 +1551,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "uuid",
 ]
