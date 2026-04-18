@@ -427,7 +427,10 @@ select.form-input{cursor:pointer}
     <button class="video-close" onclick="closeVideo()" title="Close (Esc)">&times;</button>
     <div class="video-title" id="video-title"></div>
     <video id="video-player" controls preload="metadata"></video>
-    <div class="video-error" id="video-error" style="display:none">This format may not be supported by your browser. Try downloading the file instead.</div>
+    <div class="video-error" id="video-error" style="display:none">
+      This format may not be playable in your browser (MKV/AVI/WMV often aren't).
+      <a id="video-error-download" href="#" download style="color:var(--amber);text-decoration:underline">Download the file</a> and open it in VLC or mpv.
+    </div>
   </div>
 </div>
 
@@ -1104,29 +1107,60 @@ setInterval(() => {
 }, 3000);
 
 // --- Browse & Play (from history) ---
+// Recurses one level deep and picks the largest non-sample video file.
+// Sample/trailer/extras are excluded because they'd otherwise sort first
+// alphabetically and hijack the play button.
 async function browseAndPlay(storagePath) {
   const davPath = storagePath;
-  try {
-    const r = await fetch(DAV + davPath, {
+  const VIDEO_RE = /\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i;
+  const SKIP_RE = /(^|[^a-z0-9])(sample|trailer|extras?|featurette|making.of|deleted.scenes?)([^a-z0-9]|$)/i;
+
+  async function listDir(p) {
+    const r = await fetch(DAV + p, {
       method: 'PROPFIND',
       headers: { 'Depth': '1', 'Content-Type': 'application/xml' }
     });
     const xml = await r.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'application/xml');
-    const responses = doc.querySelectorAll('response');
-    // Find first video file
-    for (const resp of responses) {
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const videos = [];
+    const subdirs = [];
+    for (const resp of doc.querySelectorAll('response')) {
       const href = resp.querySelector('href')?.textContent || '';
-      const name = resp.querySelector('displayname')?.textContent || href.split('/').pop() || '';
-      if (/\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i.test(name)) {
-        playVideo(DAV + href, name);
-        return;
+      const name = resp.querySelector('displayname')?.textContent
+        || decodeURIComponent(href.split('/').filter(Boolean).pop() || '');
+      const size = parseInt(resp.querySelector('getcontentlength')?.textContent || '0', 10);
+      const isCol = resp.querySelector('resourcetype > collection') !== null;
+      if (href === p || href === p.replace(/\/$/, '')) continue;
+      if (isCol) {
+        subdirs.push(href);
+      } else if (VIDEO_RE.test(name)) {
+        videos.push({ href, name, size });
       }
     }
-    // No video found — navigate to files tab instead
-    filesPath = davPath + '/';
-    switchTab('files');
+    return { videos, subdirs };
+  }
+
+  try {
+    let { videos, subdirs } = await listDir(davPath);
+    // If no videos at this level, look one level deeper (handles common
+    // layouts where history storage contains a subdir with the release).
+    if (videos.length === 0) {
+      for (const sub of subdirs.slice(0, 5)) {
+        const inner = await listDir(sub);
+        videos = videos.concat(inner.videos);
+      }
+    }
+    if (videos.length === 0) {
+      filesPath = davPath + '/';
+      switchTab('files');
+      return;
+    }
+    // Prefer non-sample; fall back to largest overall if everything matches skip.
+    const main = videos.filter(v => !SKIP_RE.test(v.name));
+    const pool = main.length > 0 ? main : videos;
+    pool.sort((a, b) => b.size - a.size);
+    const pick = pool[0];
+    playVideo(DAV + pick.href, pick.name);
   } catch (e) {
     toast('Could not browse files: ' + e.message, false);
   }
@@ -1139,6 +1173,8 @@ function playVideo(url, name) {
   const error = $('#video-error');
   $('#video-title').textContent = name;
   error.style.display = 'none';
+  const dl = $('#video-error-download');
+  if (dl) { dl.href = url; dl.setAttribute('download', name); }
   player.src = url;
   overlay.classList.add('open');
   player.play().catch(() => {});
