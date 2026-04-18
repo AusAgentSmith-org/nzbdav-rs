@@ -426,6 +426,10 @@ select.form-input{cursor:pointer}
   <div class="video-container">
     <button class="video-close" onclick="closeVideo()" title="Close (Esc)">&times;</button>
     <div class="video-title" id="video-title"></div>
+    <div class="video-actions" style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn btn-sm" id="video-copy-link" title="Copy stream URL for VLC/mpv">&#128279; Copy Stream Link</button>
+      <a class="btn btn-sm" id="video-download-link" href="#" download>&#11015; Download</a>
+    </div>
     <video id="video-player" controls preload="metadata"></video>
     <div class="video-error" id="video-error" style="display:none">
       This format may not be playable in your browser (MKV/AVI/WMV often aren't).
@@ -571,7 +575,7 @@ async function loadHistory() {
         if (s.status === 'Failed') failed++;
         const tag = s.status === 'Completed' ? 'tag-ok' : 'tag-fail';
         const retryBtn = s.status === 'Failed' ? `<button class="btn btn-sm" onclick="event.stopPropagation();retryHistory('${s.nzo_id}')">Retry</button> ` : '';
-        const playBtn = s.status === 'Completed' && s.storage ? `<button class="play-btn" onclick="event.stopPropagation();browseAndPlay('${esc(s.storage)}')" title="Browse files">&#9654; Play</button> ` : '';
+        const playBtn = s.status === 'Completed' && s.storage ? `<button class="play-btn" onclick="event.stopPropagation();browseAndPlay('${esc(s.storage)}')" title="Play in browser">&#9654; Play</button> <button class="play-btn" onclick="event.stopPropagation();browseAndCopyLink('${esc(s.storage)}')" title="Copy stream URL for VLC/mpv">&#128279; Link</button> ` : '';
         const failReason = s.status === 'Failed' && s.fail_message ? `<div class="fail-reason">${esc(s.fail_message)}</div>` : '';
         tbody.innerHTML += `<tr style="cursor:pointer" onclick="showLogsFor('${esc(s.name)}')" title="Click to view logs">
           <td>${esc(s.name)}${failReason}</td>
@@ -697,7 +701,7 @@ function renderFiles(xml, path) {
       } else {
         const downloadUrl = DAV + f.href;
         const isVideo = /\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i.test(f.name);
-        const playBtn = isVideo ? ` <button class="play-btn" onclick="event.preventDefault();playVideo('${esc(downloadUrl)}','${esc(f.name)}')" title="Play video">&#9654; Play</button>` : '';
+        const playBtn = isVideo ? ` <button class="play-btn" onclick="event.preventDefault();playVideo('${esc(downloadUrl)}','${esc(f.name)}')" title="Play in browser">&#9654; Play</button> <button class="play-btn" onclick="event.preventDefault();copyStreamLink('${esc(downloadUrl)}')" title="Copy stream URL for VLC/mpv">&#128279; Link</button>` : '';
         tbody.innerHTML += `<tr>
           ${cb}
           <td><a class="file-link" href="${esc(downloadUrl)}" target="_blank">${esc(f.name)}</a>${playBtn}</td>
@@ -1110,11 +1114,10 @@ setInterval(() => {
 // Recurses one level deep and picks the largest non-sample video file.
 // Sample/trailer/extras are excluded because they'd otherwise sort first
 // alphabetically and hijack the play button.
-async function browseAndPlay(storagePath) {
-  const davPath = storagePath;
-  const VIDEO_RE = /\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i;
-  const SKIP_RE = /(^|[^a-z0-9])(sample|trailer|extras?|featurette|making.of|deleted.scenes?)([^a-z0-9]|$)/i;
+const VIDEO_RE = /\.(mp4|mkv|avi|webm|mov|m4v|ts|wmv)$/i;
+const SKIP_RE = /(^|[^a-z0-9])(sample|trailer|extras?|featurette|making.of|deleted.scenes?)([^a-z0-9]|$)/i;
 
+async function resolveMainVideo(storagePath) {
   async function listDir(p) {
     const r = await fetch(DAV + p, {
       method: 'PROPFIND',
@@ -1131,36 +1134,53 @@ async function browseAndPlay(storagePath) {
       const size = parseInt(resp.querySelector('getcontentlength')?.textContent || '0', 10);
       const isCol = resp.querySelector('resourcetype > collection') !== null;
       if (href === p || href === p.replace(/\/$/, '')) continue;
-      if (isCol) {
-        subdirs.push(href);
-      } else if (VIDEO_RE.test(name)) {
-        videos.push({ href, name, size });
-      }
+      if (isCol) subdirs.push(href);
+      else if (VIDEO_RE.test(name)) videos.push({ href, name, size });
     }
     return { videos, subdirs };
   }
 
+  let { videos, subdirs } = await listDir(storagePath);
+  if (videos.length === 0) {
+    for (const sub of subdirs.slice(0, 5)) {
+      const inner = await listDir(sub);
+      videos = videos.concat(inner.videos);
+    }
+  }
+  if (videos.length === 0) return null;
+  const main = videos.filter(v => !SKIP_RE.test(v.name));
+  const pool = main.length > 0 ? main : videos;
+  pool.sort((a, b) => b.size - a.size);
+  return pool[0];
+}
+
+async function browseAndPlay(storagePath) {
   try {
-    let { videos, subdirs } = await listDir(davPath);
-    // If no videos at this level, look one level deeper (handles common
-    // layouts where history storage contains a subdir with the release).
-    if (videos.length === 0) {
-      for (const sub of subdirs.slice(0, 5)) {
-        const inner = await listDir(sub);
-        videos = videos.concat(inner.videos);
-      }
-    }
-    if (videos.length === 0) {
-      filesPath = davPath + '/';
-      switchTab('files');
-      return;
-    }
-    // Prefer non-sample; fall back to largest overall if everything matches skip.
-    const main = videos.filter(v => !SKIP_RE.test(v.name));
-    const pool = main.length > 0 ? main : videos;
-    pool.sort((a, b) => b.size - a.size);
-    const pick = pool[0];
+    const pick = await resolveMainVideo(storagePath);
+    if (!pick) { filesPath = storagePath + '/'; switchTab('files'); return; }
     playVideo(DAV + pick.href, pick.name);
+  } catch (e) {
+    toast('Could not browse files: ' + e.message, false);
+  }
+}
+
+// Copy a fully-qualified URL to clipboard so users can paste into VLC/mpv.
+async function copyStreamLink(url) {
+  const abs = new URL(url, window.location.origin).href;
+  try {
+    await navigator.clipboard.writeText(abs);
+    toast('Stream link copied — paste into VLC/mpv', true);
+  } catch (e) {
+    // Clipboard API can fail on http://, in iframes, etc. Fall back to a prompt.
+    window.prompt('Copy this URL:', abs);
+  }
+}
+
+async function browseAndCopyLink(storagePath) {
+  try {
+    const pick = await resolveMainVideo(storagePath);
+    if (!pick) { toast('No video file found', false); return; }
+    copyStreamLink(DAV + pick.href);
   } catch (e) {
     toast('Could not browse files: ' + e.message, false);
   }
@@ -1175,6 +1195,10 @@ function playVideo(url, name) {
   error.style.display = 'none';
   const dl = $('#video-error-download');
   if (dl) { dl.href = url; dl.setAttribute('download', name); }
+  const dl2 = $('#video-download-link');
+  if (dl2) { dl2.href = url; dl2.setAttribute('download', name); }
+  const copy = $('#video-copy-link');
+  if (copy) { copy.onclick = () => copyStreamLink(url); }
   player.src = url;
   overlay.classList.add('open');
   player.play().catch(() => {});
