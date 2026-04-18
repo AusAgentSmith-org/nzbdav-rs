@@ -8,12 +8,11 @@ use md5::{Digest, Md5};
 use nzb_core::models::NzbJob;
 use nzbdav_core::util::is_par2_file;
 use nzbdav_stream::provider::UsenetArticleProvider;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 use super::NzbFileInfo;
-use crate::error::{PipelineError, Result};
+use crate::error::Result;
 
 /// Size of the first-N-bytes window used for 16KB MD5 matching with PAR2.
 const FIRST_16K: usize = 16 * 1024;
@@ -39,14 +38,14 @@ pub async fn fetch_first_segments(
         return fetch_sequential(provider, job).await;
     }
 
-    let semaphore = Arc::new(Semaphore::new(total_conns));
+    let priority_sem = provider.priority_semaphore();
     let mut join_set = JoinSet::new();
     let total_files = job.files.len();
     let completed = Arc::new(AtomicUsize::new(0));
 
     for (index, nzb_file) in job.files.iter().enumerate() {
         let provider = Arc::clone(provider);
-        let sem = Arc::clone(&semaphore);
+        let sem = Arc::clone(&priority_sem);
         let completed = Arc::clone(&completed);
 
         // Sort articles by segment number to ensure correct byte order.
@@ -70,11 +69,9 @@ pub async fn fetch_first_segments(
         let file_size = nzb_file.bytes;
         let is_par2 = nzb_file.is_par2 || is_par2_file(&subject_name);
 
-        // Acquire the semaphore BEFORE spawning so we don't flood the pool
-        let permit = sem
-            .acquire_owned()
-            .await
-            .map_err(|e| PipelineError::Other(e.to_string()))?;
+        // Acquire a low-priority permit BEFORE spawning so ingest cannot
+        // starve WebDAV playback (which uses reserved high-priority slots).
+        let permit = sem.acquire_low().await;
 
         join_set.spawn(async move {
             let result = fetch_single_first_segment(

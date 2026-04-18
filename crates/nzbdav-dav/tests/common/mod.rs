@@ -1,4 +1,5 @@
 //! Test helpers: in-memory mock `DavDatabase` and router builder.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,6 +55,11 @@ impl MockDavDatabase {
     /// Seed a queue item.
     pub async fn seed_queue_item(&self, qi: QueueItem) {
         self.inner.write().await.queue.push(qi);
+    }
+
+    /// Seed a file blob.
+    pub async fn seed_file_blob(&self, id: Uuid, data: Vec<u8>) {
+        self.inner.write().await.file_blobs.insert(id, data);
     }
 
     /// Check if an item exists at path.
@@ -349,6 +355,17 @@ pub fn make_nzb_file_item(
 pub fn test_router(db: MockDavDatabase) -> Router {
     let provider = Arc::new(nzbdav_stream::UsenetArticleProvider::new(vec![]));
     let store = Arc::new(DatabaseStore::new(Arc::new(db), provider, 0));
+    nzbdav_dav::dav_router(store)
+}
+
+/// Router builder that accepts a custom (mock) article provider. Needed for
+/// range/stream tests that must return canned article bytes.
+pub fn test_router_with_provider(
+    db: MockDavDatabase,
+    provider: Arc<nzbdav_stream::UsenetArticleProvider>,
+    lookahead: usize,
+) -> Router {
+    let store = Arc::new(DatabaseStore::new(Arc::new(db), provider, lookahead));
     nzbdav_dav::dav_router(store)
 }
 

@@ -26,10 +26,9 @@ pub struct SeekableSegmentStream {
 }
 
 /// Result of interpolation search: segment index and its byte range.
-#[allow(dead_code)]
-struct FoundSegment {
-    index: usize,
-    start_byte: u64,
+pub struct FoundSegment {
+    pub index: usize,
+    pub start_byte: u64,
 }
 
 impl SeekableSegmentStream {
@@ -52,11 +51,65 @@ impl SeekableSegmentStream {
         }
     }
 
+    /// Build a stream positioned exactly at `target_byte`.
+    ///
+    /// Resolves the containing segment via yEnc-header interpolation, spawns
+    /// the underlying multi-segment fetch starting at that segment, and
+    /// discards any intra-segment prefix so the next read returns the byte at
+    /// `target_byte`. This is the byte-exact path used by the Range handler.
+    pub async fn aligned(
+        provider: Arc<UsenetArticleProvider>,
+        segment_ids: Vec<String>,
+        file_size: u64,
+        lookahead: usize,
+        target_byte: u64,
+    ) -> std::io::Result<Self> {
+        let mut s = Self::new(provider, segment_ids, file_size, lookahead);
+        if target_byte == 0 {
+            s.inner = Some(MultiSegmentStream::new(
+                Arc::clone(&s.provider),
+                s.segment_ids.clone(),
+                s.lookahead,
+            ));
+            s.discard_bytes = 0;
+            s.needs_resolve = false;
+            s.position = 0;
+            return Ok(s);
+        }
+
+        let found = s.find_segment(target_byte).await?;
+        let remaining = s.segment_ids[found.index..].to_vec();
+        let mut inner = MultiSegmentStream::new(Arc::clone(&s.provider), remaining, s.lookahead);
+
+        // Discard from segment start to target byte.
+        let mut to_skip = target_byte.saturating_sub(found.start_byte);
+        if to_skip > 0 {
+            use tokio::io::AsyncReadExt;
+            let mut scratch = vec![0u8; 65_536];
+            while to_skip > 0 {
+                let want = scratch.len().min(to_skip as usize);
+                let n = inner.read(&mut scratch[..want]).await?;
+                if n == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "EOF while aligning to seek offset",
+                    ));
+                }
+                to_skip -= n as u64;
+            }
+        }
+
+        s.inner = Some(inner);
+        s.discard_bytes = 0;
+        s.needs_resolve = false;
+        s.position = target_byte;
+        Ok(s)
+    }
+
     /// Interpolation search: find the segment containing `target_byte`.
     ///
     /// Fetches yEnc headers to get actual byte ranges for guessed segments,
     /// then narrows the search until the correct segment is found.
-    #[allow(dead_code)]
     async fn find_segment(&self, target_byte: u64) -> std::io::Result<FoundSegment> {
         let n = self.segment_ids.len() as i64;
         if n == 0 {
@@ -106,13 +159,15 @@ impl SeekableSegmentStream {
                 }
             };
 
-            let seg_start = headers.part_begin;
+            // yEnc part_begin/part_end are 1-based inclusive offsets. Convert
+            // to a 0-based half-open range [seg_start_0, seg_end).
+            let seg_start_0 = headers.part_begin.saturating_sub(1);
             let seg_end = headers.part_end;
 
             debug!(
                 iteration,
                 guess_idx,
-                seg_start,
+                seg_start_0,
                 seg_end,
                 target = target_byte,
                 "interpolation probe"
@@ -122,15 +177,15 @@ impl SeekableSegmentStream {
                 // Too low — search higher
                 lo_idx = guess_idx as i64 + 1;
                 lo_byte = seg_end as i64;
-            } else if seg_start > target_byte {
+            } else if seg_start_0 > target_byte {
                 // Too high — search lower
                 hi_idx = guess_idx as i64;
-                hi_byte = seg_start as i64;
+                hi_byte = seg_start_0 as i64;
             } else {
-                // Found: seg_start <= target < seg_end
+                // Found: seg_start_0 <= target < seg_end
                 return Ok(FoundSegment {
                     index: guess_idx,
-                    start_byte: seg_start,
+                    start_byte: seg_start_0,
                 });
             }
         }
@@ -248,6 +303,54 @@ impl AsyncRead for SeekableSegmentStream {
     }
 }
 
+impl AsyncSeek for SeekableSegmentStream {
+    fn start_seek(mut self: Pin<&mut Self>, pos: std::io::SeekFrom) -> std::io::Result<()> {
+        let target = match pos {
+            std::io::SeekFrom::Start(offset) => offset,
+            std::io::SeekFrom::Current(delta) => {
+                let t = self.position as i64 + delta;
+                if t < 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "seek to negative position",
+                    ));
+                }
+                t as u64
+            }
+            std::io::SeekFrom::End(delta) => {
+                let t = self.file_size as i64 + delta;
+                if t < 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "seek to negative position",
+                    ));
+                }
+                t as u64
+            }
+        };
+
+        self.pending_seek = Some(target.min(self.file_size));
+        Ok(())
+    }
+
+    fn poll_complete(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<std::io::Result<u64>> {
+        let Some(target) = self.pending_seek.take() else {
+            return Poll::Ready(Ok(self.position));
+        };
+
+        debug!(target, "seek to offset");
+        self.inner = None;
+        self.discard_bytes = 0;
+        self.position = target;
+        self.needs_resolve = true;
+
+        Poll::Ready(Ok(target))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,52 +425,58 @@ mod tests {
         let err = result.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
-}
 
-impl AsyncSeek for SeekableSegmentStream {
-    fn start_seek(mut self: Pin<&mut Self>, pos: std::io::SeekFrom) -> std::io::Result<()> {
-        let target = match pos {
-            std::io::SeekFrom::Start(offset) => offset,
-            std::io::SeekFrom::Current(delta) => {
-                let t = self.position as i64 + delta;
-                if t < 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "seek to negative position",
-                    ));
-                }
-                t as u64
-            }
-            std::io::SeekFrom::End(delta) => {
-                let t = self.file_size as i64 + delta;
-                if t < 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "seek to negative position",
-                    ));
-                }
-                t as u64
-            }
-        };
+    // -- Byte-correctness tests (finding #7) --
+    // These go through the mock provider so we can assert exact returned bytes.
 
-        self.pending_seek = Some(target.min(self.file_size));
-        Ok(())
+    use tokio::io::AsyncReadExt;
+
+    /// `aligned` positions the stream exactly at the target byte; reading to
+    /// end returns the plaintext slice from that offset onward.
+    #[tokio::test]
+    async fn seekable_stream_aligned_returns_exact_slice() {
+        let data: Vec<u8> = (0..8192u32).flat_map(|n| n.to_le_bytes()).collect();
+        let file_len = data.len() as u64;
+        let (provider, mids, original) = crate::testing::mock_provider_for_file("t.bin", data, 4);
+
+        let seek_to: u64 = 12_345;
+        let mut stream = SeekableSegmentStream::aligned(provider, mids, file_len, 4, seek_to)
+            .await
+            .unwrap();
+
+        let mut out = Vec::new();
+        stream.read_to_end(&mut out).await.unwrap();
+        assert_eq!(out, original[seek_to as usize..]);
     }
 
-    fn poll_complete(
-        mut self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<u64>> {
-        let Some(target) = self.pending_seek.take() else {
-            return Poll::Ready(Ok(self.position));
-        };
+    /// Reading from position 0 must produce the whole file byte-for-byte.
+    #[tokio::test]
+    async fn seekable_stream_from_zero_reads_full_file() {
+        let data: Vec<u8> = (0..4096u32).flat_map(|n| n.to_le_bytes()).collect();
+        let file_len = data.len() as u64;
+        let (provider, mids, original) = crate::testing::mock_provider_for_file("t.bin", data, 4);
 
-        debug!(target, "seek to offset");
-        self.inner = None;
-        self.discard_bytes = 0;
-        self.position = target;
-        self.needs_resolve = true;
+        let mut stream = SeekableSegmentStream::new(provider, mids, file_len, 4);
+        let mut out = Vec::new();
+        stream.read_to_end(&mut out).await.unwrap();
+        assert_eq!(out, original);
+    }
 
-        Poll::Ready(Ok(target))
+    /// Alignment right at a segment boundary must land on byte 0 of that
+    /// segment, not the previous one.
+    #[tokio::test]
+    async fn seekable_stream_aligned_on_segment_boundary() {
+        let data: Vec<u8> = (0..4096u32).flat_map(|n| n.to_le_bytes()).collect();
+        let file_len = data.len() as u64;
+        let (provider, mids, original) = crate::testing::mock_provider_for_file("t.bin", data, 4);
+
+        // 4 segments of 4096 bytes each = 4096 bytes per segment.
+        let boundary = file_len / 2;
+        let mut stream = SeekableSegmentStream::aligned(provider, mids, file_len, 4, boundary)
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        stream.read_to_end(&mut out).await.unwrap();
+        assert_eq!(out, original[boundary as usize..]);
     }
 }

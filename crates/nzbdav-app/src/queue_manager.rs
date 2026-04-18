@@ -41,7 +41,7 @@ pub fn spawn_queue_manager(
         article_buffer_size: config.get_article_buffer_size(),
         file_blocklist: config.get_file_blocklist(),
         ensure_importable_video: config.is_ensure_importable_video_enabled(),
-        webdav_base_url: config.get_or_default("api.webdav-base-url", "http://localhost:8080"),
+        webdav_base_url: config.get_or_default("api.strm-base-url", "http://localhost:8080"),
     };
 
     let handle = std::thread::Builder::new()

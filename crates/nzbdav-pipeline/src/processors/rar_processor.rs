@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use nzbdav_core::models::{FilePart, LongRange};
 use nzbdav_stream::provider::UsenetArticleProvider;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
@@ -73,24 +72,20 @@ pub async fn process_rar_files(
     }
 
     // ── Process remaining RAR files in parallel ─────────────────────
-    let total_conns = provider.total_connections().max(1);
-    let semaphore = Arc::new(Semaphore::new(total_conns));
+    let priority_sem = provider.priority_semaphore();
     let completed = Arc::new(AtomicUsize::new(1)); // 1 = probe already done
     let mut join_set = JoinSet::new();
 
     for rar_file in &rar_only[1..] {
         let provider = Arc::clone(provider);
-        let sem = Arc::clone(&semaphore);
+        let sem = Arc::clone(&priority_sem);
         let completed = Arc::clone(&completed);
         let pw = password.map(String::from);
         let file_index = rar_file.file_index;
         let resolved_name = rar_file.resolved_name.clone();
         let segment_ids = rar_file.segment_ids.clone();
 
-        let permit = sem
-            .acquire_owned()
-            .await
-            .map_err(|e| PipelineError::Other(e.to_string()))?;
+        let permit = sem.acquire_low().await;
 
         join_set.spawn(async move {
             let result = fetch_and_parse_rar(

@@ -2,13 +2,21 @@
 //! article fetching with multi-server failover and yEnc decoding.
 
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use arc_swap::ArcSwap;
+use async_trait::async_trait;
 use nzb_decode::decode_yenc;
 use nzb_nntp::{ConnectionPool, NntpError};
 use tracing::{debug, warn};
 
 use crate::error::{Result, StreamError};
+use crate::prioritized_semaphore::PrioritizedSemaphore;
+
+/// Fraction of connection capacity reserved for high-priority (WebDAV
+/// streaming) work. Ingest pipelines acquire low-priority permits, so they
+/// cannot consume the reserved slots — leaving playback headroom.
+const HIGH_PRIORITY_RESERVE_FRACTION: f64 = 0.25;
 
 /// Decoded yEnc part header information, used for seek interpolation.
 pub struct YencHeaders {
@@ -18,6 +26,18 @@ pub struct YencHeaders {
     pub part_end: u64,
     /// Total size of the reassembled file.
     pub total_size: u64,
+}
+
+/// Backend trait used by [`UsenetArticleProvider`]. Production code uses the
+/// pool-backed impl; tests use a fake. The trait is public so integration
+/// tests in other crates can provide their own canned responses.
+#[async_trait]
+pub trait ArticleBackend: Send + Sync + 'static {
+    async fn fetch_decoded(&self, message_id: &str) -> Result<Vec<u8>>;
+    async fn stat(&self, message_id: &str) -> Result<bool>;
+    async fn yenc_headers(&self, message_id: &str) -> Result<YencHeaders>;
+    /// Total connection capacity across servers. Tests return whatever fits.
+    fn total_connections(&self) -> usize;
 }
 
 /// Fetches and decodes Usenet articles with multi-server failover.
@@ -31,6 +51,8 @@ pub struct YencHeaders {
 /// when server configuration changes.
 pub struct UsenetArticleProvider {
     pools: ArcSwap<Vec<Arc<ConnectionPool>>>,
+    fake: Option<Arc<dyn ArticleBackend>>,
+    priority_semaphore: OnceLock<Arc<PrioritizedSemaphore>>,
 }
 
 impl UsenetArticleProvider {
@@ -38,7 +60,35 @@ impl UsenetArticleProvider {
     pub fn new(pools: Vec<Arc<ConnectionPool>>) -> Self {
         Self {
             pools: ArcSwap::from_pointee(pools),
+            fake: None,
+            priority_semaphore: OnceLock::new(),
         }
+    }
+
+    /// Create a provider backed by a test fake. Production code must not use
+    /// this — the constructor exists so integration tests can inject canned
+    /// responses without standing up an NNTP server.
+    pub fn with_fake(backend: Arc<dyn ArticleBackend>) -> Self {
+        Self {
+            pools: ArcSwap::from_pointee(vec![]),
+            fake: Some(backend),
+            priority_semaphore: OnceLock::new(),
+        }
+    }
+
+    /// Shared priority semaphore sized to the current connection capacity.
+    /// Ingest pipelines should `acquire_low` on it so they never starve out
+    /// WebDAV playback, which `acquire_high` (or goes uncapped through the
+    /// pool). Lazily constructed on first access.
+    pub fn priority_semaphore(&self) -> Arc<PrioritizedSemaphore> {
+        Arc::clone(self.priority_semaphore.get_or_init(|| {
+            let total = self.total_connections().max(1);
+            let reserved = ((total as f64) * HIGH_PRIORITY_RESERVE_FRACTION).ceil() as usize;
+            // Always leave at least one low-priority slot so ingest can make
+            // progress even on tiny pools.
+            let reserved = reserved.min(total.saturating_sub(1)).max(0);
+            Arc::new(PrioritizedSemaphore::new(total, reserved))
+        }))
     }
 
     /// Atomically replace the connection pools (e.g. after server config change).
@@ -53,6 +103,9 @@ impl UsenetArticleProvider {
     /// Total number of connections across all pools.
     /// Useful for limiting concurrency to what the pools can actually serve.
     pub fn total_connections(&self) -> usize {
+        if let Some(fake) = &self.fake {
+            return fake.total_connections();
+        }
         let pools = self.load_pools();
         pools.iter().map(|p| p.config().connections as usize).sum()
     }
@@ -60,6 +113,9 @@ impl UsenetArticleProvider {
     /// Fetch a single article by message-id, decode yEnc, and return the
     /// decoded payload. Tries each server pool in order with failover.
     pub async fn fetch_decoded(&self, message_id: &str) -> Result<Vec<u8>> {
+        if let Some(fake) = &self.fake {
+            return fake.fetch_decoded(message_id).await;
+        }
         let pools = self.load_pools();
         let mut last_err: Option<StreamError> = None;
 
@@ -103,6 +159,9 @@ impl UsenetArticleProvider {
     /// Check article existence via the STAT command. Returns `true` if any
     /// server has the article.
     pub async fn stat(&self, message_id: &str) -> Result<bool> {
+        if let Some(fake) = &self.fake {
+            return fake.stat(message_id).await;
+        }
         let pools = self.load_pools();
         let mut last_err: Option<StreamError> = None;
 
@@ -150,6 +209,9 @@ impl UsenetArticleProvider {
     /// Useful for seek interpolation to determine which segment contains a
     /// given byte offset.
     pub async fn yenc_headers(&self, message_id: &str) -> Result<YencHeaders> {
+        if let Some(fake) = &self.fake {
+            return fake.yenc_headers(message_id).await;
+        }
         let pools = self.load_pools();
         let mut last_err: Option<StreamError> = None;
 

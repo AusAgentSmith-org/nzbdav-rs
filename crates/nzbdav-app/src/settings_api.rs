@@ -248,5 +248,34 @@ mod tests {
         assert!(!s.ensure_importable_video);
         assert_eq!(s.duplicate_nzb_behavior, "reject");
         assert!(s.webdav_enforce_readonly);
+        // Regression: STRM base URL must round-trip through the same config
+        // key that the queue pipeline reads (`api.strm-base-url`).
+        assert_eq!(s.strm_base_url, "http://example.com/dav");
+    }
+
+    /// Settings API and queue pipeline must share the same config key so the
+    /// UI toggle actually controls STRM generation.
+    #[tokio::test]
+    async fn strm_base_url_persists_to_api_strm_base_url_key() {
+        let state = test_state().await;
+        {
+            let conn = state.db.lock();
+            state
+                .config
+                .set(&conn, "api.strm-base-url", "http://strm.test/dav")
+                .unwrap();
+        }
+        let app = Router::new()
+            .route("/api/settings", get(get_settings).put(update_settings))
+            .with_state(state.clone());
+        let resp = app
+            .oneshot(Request::get("/api/settings").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let s: SettingsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(s.strm_base_url, "http://strm.test/dav");
     }
 }

@@ -7,7 +7,7 @@ use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
-use tokio::io::AsyncSeekExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use tracing::{debug, info, warn};
 
@@ -259,6 +259,16 @@ async fn serve_streaming(
                     range_start = range.start,
                     "streaming MultipartFile"
                 );
+
+                // Encrypted multipart + Range is unsafe today: seeking the
+                // raw ciphertext stream before wrapping in AesDecoderStream
+                // desynchronises CBC state. Decline the range and serve the
+                // full decrypted body instead — correctness beats seekability.
+                if meta.aes_params.is_some() {
+                    warn!("Range request on encrypted file — serving full body (200 OK)");
+                    return serve_full_body(store, node, file_size).await;
+                }
+
                 let mut stream = nzbdav_stream::DavMultipartFileStream::new(
                     store.provider(),
                     meta.file_parts,
@@ -271,18 +281,7 @@ async fn serve_streaming(
                     .await
                     .is_ok()
                 {
-                    let body = if let Some(aes) = meta.aes_params {
-                        let decoded_size = aes.decoded_size as u64;
-                        let aes_stream = nzbdav_stream::AesDecoderStream::new(
-                            stream,
-                            &aes.key,
-                            &aes.iv,
-                            decoded_size,
-                        );
-                        Body::from_stream(ReaderStream::new(aes_stream))
-                    } else {
-                        Body::from_stream(ReaderStream::new(stream))
-                    };
+                    let body = Body::from_stream(ReaderStream::new(stream.take(content_length)));
 
                     return Response::builder()
                         .status(StatusCode::PARTIAL_CONTENT)
@@ -294,50 +293,48 @@ async fn serve_streaming(
                         .body(body)
                         .unwrap();
                 }
+
+                return range_not_satisfiable(file_size);
             }
 
-            // NzbFile (plain files): SeekableSegmentStream with seek.
+            // NzbFile (plain files): SeekableSegmentStream with exact seek.
             if node.item.sub_type == ItemSubType::NzbFile
                 && let Ok(meta) =
                     bincode::deserialize::<nzbdav_core::models::DavNzbFile>(&blob_data)
             {
-                let mut stream = nzbdav_stream::SeekableSegmentStream::new(
+                match nzbdav_stream::SeekableSegmentStream::aligned(
                     store.provider(),
                     meta.segment_ids,
                     file_size,
                     store.lookahead(),
-                );
-
-                if stream
-                    .seek(std::io::SeekFrom::Start(range.start))
-                    .await
-                    .is_ok()
+                    range.start,
+                )
+                .await
                 {
-                    return Response::builder()
-                        .status(StatusCode::PARTIAL_CONTENT)
-                        .header(header::CONTENT_TYPE, &node.content_type)
-                        .header(header::CONTENT_RANGE, &content_range)
-                        .header(header::CONTENT_LENGTH, content_length)
-                        .header(header::ETAG, &node.etag)
-                        .header(header::ACCEPT_RANGES, "bytes")
-                        .body(Body::from_stream(ReaderStream::new(stream)))
-                        .unwrap();
+                    Ok(stream) => {
+                        return Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(header::CONTENT_TYPE, &node.content_type)
+                            .header(header::CONTENT_RANGE, &content_range)
+                            .header(header::CONTENT_LENGTH, content_length)
+                            .header(header::ETAG, &node.etag)
+                            .header(header::ACCEPT_RANGES, "bytes")
+                            .body(Body::from_stream(ReaderStream::new(
+                                stream.take(content_length),
+                            )))
+                            .unwrap();
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "failed to align seekable stream, returning 416");
+                        return range_not_satisfiable(file_size);
+                    }
                 }
             }
         }
 
-        // Fallback: serve full body.
-        match store.get_body(&node.item).await {
-            Ok(body) => Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, &node.content_type)
-                .header(header::CONTENT_LENGTH, file_size)
-                .header(header::ETAG, &node.etag)
-                .header(header::ACCEPT_RANGES, "bytes")
-                .body(body)
-                .unwrap(),
-            Err(e) => error_response(e),
-        }
+        // Fallthrough: we saw a Range header but had no streamable source.
+        // Don't emit a 200 body — that corrupts client-side seek state.
+        range_not_satisfiable(file_size)
     } else {
         // No Range header: serve full body.
         match store.get_body(&node.item).await {
@@ -351,6 +348,36 @@ async fn serve_streaming(
                 .unwrap(),
             Err(e) => error_response(e),
         }
+    }
+}
+
+/// Build a 416 Range Not Satisfiable response. Used whenever we cannot
+/// produce byte-exact partial content — never silently fall back to 200.
+fn range_not_satisfiable(file_size: u64) -> Response {
+    Response::builder()
+        .status(StatusCode::RANGE_NOT_SATISFIABLE)
+        .header(header::CONTENT_RANGE, format!("bytes */{file_size}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// Serve a full 200 OK body — used when a Range header arrives but the
+/// resource cannot be range-served correctly (e.g. encrypted multipart).
+async fn serve_full_body(
+    store: DavState,
+    node: &crate::store::DavNode,
+    file_size: u64,
+) -> Response {
+    match store.get_body(&node.item).await {
+        Ok(body) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, &node.content_type)
+            .header(header::CONTENT_LENGTH, file_size)
+            .header(header::ETAG, &node.etag)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .body(body)
+            .unwrap(),
+        Err(e) => error_response(e),
     }
 }
 

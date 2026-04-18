@@ -17,6 +17,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 aes = { workspace = true }
 cbc = { workspace = true }
+async-trait = { workspace = true }
+crc32fast = { workspace = true }
+futures = "0.3"
 
 [lints]
 workspace = true

@@ -625,12 +625,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "futures"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -638,6 +654,23 @@ name = "futures-core"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf29c38818342a3b26b5b923639e7b1f4a61fc5e76102d4b1981c6dc7a7579d"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-io"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
 
 [[package]]
 name = "futures-macro"
@@ -674,10 +707,13 @@ version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
  "futures-macro",
  "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -1369,13 +1405,13 @@ dependencies = [
 
 [[package]]
 name = "nzb-core"
-version = "0.2.4"
-source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "52589c0af44a709b928af2cdb7aa592c012ed12446951eb13a7cca1a573554e8"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ccfc1d1d8e3b5e2b95b0797e2f1540879b82d0e22a075eeb44c92b342a855eb"
 dependencies = [
  "anyhow",
  "chrono",
- "nzb-nntp 0.2.6",
+ "nzb-nntp",
  "parking_lot",
  "quick-xml",
  "rusqlite",
@@ -1391,8 +1427,8 @@ dependencies = [
 [[package]]
 name = "nzb-decode"
 version = "0.1.2"
-source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "d60a378f66c2cc5a6be5641c88fd1a6d9785ec3508cb1f4c35d97e1f7a06f399"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bbbe9a09f91ba963b43db5351d7344af4941a3b9819dc7a20aa98d1dfd2550d"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1406,9 +1442,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-nntp"
-version = "0.2.6"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f61944290dd3718fb9c1a4c4e833c18f84c59d1b012b2b855a18364fdcdfab73"
+checksum = "4c6588351d5b892cfd2fc8f87427acfbc4c42556647b370a093bca2051b1eba8"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1419,31 +1455,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "serde",
- "socket2 0.5.10",
- "thiserror 2.0.18",
- "tokio",
- "tokio-rustls",
- "tokio-socks",
- "tracing",
- "uuid",
- "webpki-roots",
-]
-
-[[package]]
-name = "nzb-nntp"
-version = "0.2.8"
-source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "a9212c9ddacb61298a69ea6458d27350b8325ad8dfb26a3b197d2b22207200af"
-dependencies = [
- "anyhow",
- "arc-swap",
- "bytes",
- "flate2",
- "governor",
- "parking_lot",
- "rustls",
- "rustls-pki-types",
- "serde",
+ "sha2",
  "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
@@ -1467,7 +1479,7 @@ dependencies = [
  "http",
  "mime_guess",
  "nzb-core",
- "nzb-nntp 0.2.8",
+ "nzb-nntp",
  "nzbdav-arr",
  "nzbdav-core",
  "nzbdav-dav",
@@ -1599,10 +1611,13 @@ version = "0.4.1"
 dependencies = [
  "aes",
  "arc-swap",
+ "async-trait",
  "bytes",
  "cbc",
+ "crc32fast",
+ "futures",
  "nzb-decode",
- "nzb-nntp 0.2.8",
+ "nzb-nntp",
  "nzbdav-core",
  "parking_lot",
  "thiserror 2.0.18",
@@ -2065,8 +2080,8 @@ dependencies = [
 [[package]]
 name = "rust-par2"
 version = "0.1.2"
-source = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"
-checksum = "4eee39b7caf8a4c96db9e4c4525b04f7517ca025746e12bfb2781b9850248df9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "316a361ebfb34b398e72eb31a4f366d51c9c0c8d7e60f70b1904c025175c2d6b"
 dependencies = [
  "crc32fast",
  "md-5",

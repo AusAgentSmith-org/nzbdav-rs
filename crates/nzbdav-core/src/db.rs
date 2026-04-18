@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_dav_items_type_created ON dav_items(type, created
 CREATE INDEX IF NOT EXISTS idx_dav_items_sub_type_created ON dav_items(sub_type, created_at);
 CREATE INDEX IF NOT EXISTS idx_dav_items_history ON dav_items(history_item_id, type, created_at);
 CREATE INDEX IF NOT EXISTS idx_dav_items_nzb_blob ON dav_items(nzb_blob_id);
+CREATE INDEX IF NOT EXISTS idx_dav_items_path ON dav_items(path);
 
 CREATE TABLE IF NOT EXISTS queue_items (
     id TEXT PRIMARY KEY,
@@ -123,5 +124,25 @@ mod tests {
             )
             .unwrap();
         assert!(count >= 7, "Expected at least 7 tables, got {count}");
+    }
+
+    /// Every WebDAV path lookup does `WHERE path = ?1`. Without an index on
+    /// the `path` column, SQLite falls back to a full table scan — fine for
+    /// tiny libraries, disastrous as the virtual tree grows. This test asks
+    /// SQLite to explain the plan and asserts an index is used.
+    #[test]
+    fn dav_items_path_lookup_uses_index() {
+        let conn = open_in_memory().unwrap();
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM dav_items WHERE path = ?1",
+                ["/foo/bar"],
+                |row| row.get::<_, String>(3),
+            )
+            .unwrap();
+        assert!(
+            plan.to_uppercase().contains("USING INDEX"),
+            "expected path lookup to use an index, got plan: {plan}"
+        );
     }
 }

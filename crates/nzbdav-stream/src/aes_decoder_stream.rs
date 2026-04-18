@@ -6,17 +6,17 @@ use std::io::SeekFrom;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use aes::Aes128;
+use aes::Aes256;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
 use tracing::debug;
 
-type Aes128CbcDec = cbc::Decryptor<Aes128>;
+type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
 /// AES block size in bytes.
 const AES_BLOCK_SIZE: usize = 16;
 
-/// AES-128-CBC decryption stream wrapper.
+/// AES-256-CBC decryption stream wrapper.
 ///
 /// Reads encrypted data from the inner stream in 16-byte blocks, decrypts
 /// them, and serves the plaintext. Caps output at `decoded_size` to handle
@@ -27,7 +27,7 @@ const AES_BLOCK_SIZE: usize = 16;
 /// within the first block.
 pub struct AesDecoderStream<S> {
     inner: S,
-    key: [u8; 16],
+    key: [u8; 32],
     iv: [u8; 16],
     decoded_size: u64,
     position: u64,
@@ -61,16 +61,16 @@ enum SeekState {
 }
 
 impl<S: AsyncRead + AsyncSeek + Unpin> AesDecoderStream<S> {
-    /// Create a new AES-128-CBC decryption stream.
+    /// Create a new AES-256-CBC decryption stream.
     ///
     /// * `inner` — the underlying encrypted data stream
-    /// * `key` — 16-byte AES key
+    /// * `key` — 32-byte AES-256 key (RAR5 derives 32 bytes)
     /// * `iv` — 16-byte initialization vector
     /// * `decoded_size` — actual plaintext size (excluding PKCS7 padding)
     pub fn new(inner: S, key: &[u8], iv: &[u8], decoded_size: u64) -> Self {
-        let mut key_arr = [0u8; 16];
+        let mut key_arr = [0u8; 32];
         let mut iv_arr = [0u8; 16];
-        let key_len = key.len().min(16);
+        let key_len = key.len().min(32);
         let iv_len = iv.len().min(16);
         key_arr[..key_len].copy_from_slice(&key[..key_len]);
         iv_arr[..iv_len].copy_from_slice(&iv[..iv_len]);
@@ -89,8 +89,8 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AesDecoderStream<S> {
     }
 
     /// Decrypt a single AES block in-place using the given IV.
-    fn decrypt_block(key: &[u8; 16], iv: &[u8; 16], block: &mut [u8; AES_BLOCK_SIZE]) {
-        let mut decryptor = Aes128CbcDec::new(key.into(), iv.into());
+    fn decrypt_block(key: &[u8; 32], iv: &[u8; 16], block: &mut [u8; AES_BLOCK_SIZE]) {
+        let mut decryptor = Aes256CbcDec::new(key.into(), iv.into());
         // Decrypt a single block: we treat the 16 bytes as one CBC block.
         // For CBC, each block uses the previous ciphertext as IV.
         // We handle this by creating a fresh decryptor with the correct IV
@@ -387,5 +387,80 @@ impl<S: AsyncRead + AsyncSeek + Unpin> AsyncSeek for AesDecoderStream<S> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aes::Aes256;
+    use cbc::cipher::{BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    type Aes256CbcEnc = cbc::Encryptor<Aes256>;
+
+    /// Encrypt `plaintext` with AES-256-CBC using the given 32-byte key and
+    /// 16-byte IV. Plaintext length must be a multiple of 16.
+    fn aes256_cbc_encrypt(plaintext: &[u8], key: &[u8; 32], iv: &[u8; 16]) -> Vec<u8> {
+        assert!(plaintext.len().is_multiple_of(AES_BLOCK_SIZE));
+        let mut buf = plaintext.to_vec();
+        let n = buf.len();
+        Aes256CbcEnc::new(key.into(), iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, n)
+            .unwrap();
+        buf
+    }
+
+    /// Round-trip an AES-256 plaintext through `AesDecoderStream`. Fails today
+    /// because the stream only keeps the first 16 bytes of the key and uses
+    /// AES-128 — decryption produces garbage and the assertion fires.
+    #[tokio::test]
+    async fn aes256_round_trip_decrypts_bytes_correctly() {
+        let key: [u8; 32] = [
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
+            0xff, 0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0,
+            0xd0, 0xe0, 0xf0, 0x01,
+        ];
+        let iv: [u8; 16] = [
+            0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71, 0x82, 0x93, 0xa4, 0xb5, 0xc6, 0xd7,
+            0xe8, 0xf9,
+        ];
+
+        let plaintext: Vec<u8> = (0..512u16).map(|n| n as u8).collect();
+        let ciphertext = aes256_cbc_encrypt(&plaintext, &key, &iv);
+
+        let inner = std::io::Cursor::new(ciphertext);
+        let mut stream = AesDecoderStream::new(inner, &key, &iv, plaintext.len() as u64);
+
+        let mut decrypted = Vec::new();
+        stream.read_to_end(&mut decrypted).await.unwrap();
+        assert_eq!(
+            decrypted, plaintext,
+            "AES-256 round-trip mismatch (truncated key / wrong cipher)"
+        );
+    }
+
+    /// Seeking to a non-zero offset on an AES-256 encrypted stream must return
+    /// the plaintext slice starting at that offset. Today the CBC state is
+    /// derived using the wrong (truncated) key, so even if the seek wires up
+    /// correctly, decryption produces wrong bytes.
+    #[tokio::test]
+    async fn aes256_seek_midway_returns_correct_plaintext_slice() {
+        let key: [u8; 32] = [7u8; 32];
+        let iv: [u8; 16] = [3u8; 16];
+
+        let plaintext: Vec<u8> = (0..1024u16).map(|n| (n as u8) ^ 0xa5).collect();
+        let ciphertext = aes256_cbc_encrypt(&plaintext, &key, &iv);
+
+        let inner = std::io::Cursor::new(ciphertext);
+        let mut stream = AesDecoderStream::new(inner, &key, &iv, plaintext.len() as u64);
+
+        // Seek to a block boundary partway through.
+        let seek_to: u64 = 256;
+        stream.seek(SeekFrom::Start(seek_to)).await.unwrap();
+
+        let mut tail = Vec::new();
+        stream.read_to_end(&mut tail).await.unwrap();
+        assert_eq!(tail, plaintext[seek_to as usize..]);
     }
 }

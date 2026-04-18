@@ -12,6 +12,7 @@ pub mod nzb_file_stream;
 pub mod prioritized_semaphore;
 pub mod provider;
 pub mod seekable_segment_stream;
+pub mod testing;
 
 pub use aes_decoder_stream::AesDecoderStream;
 pub use error::{Result, StreamError};
