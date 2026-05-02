@@ -81,6 +81,16 @@ steps:
       build_args_from_env:
         - CARGO_REGISTRIES_FORGEJO_TOKEN
 
+  - name: cross-build-arm64
+    image: messense/rust-musl-cross:aarch64-musl
+    when:
+      - event: tag
+    commands:
+      - rustup update stable
+      - cargo build --release --target aarch64-unknown-linux-musl -p nzbdav-app
+      - aarch64-linux-musl-strip target/aarch64-unknown-linux-musl/release/nzbdav-app
+      - cp target/aarch64-unknown-linux-musl/release/nzbdav-app nzbdav-app-aarch64-linux-musl
+
   - name: push-ghcr
     image: quay.io/skopeo/stable
     when:
@@ -138,6 +148,15 @@ steps:
           cat /tmp/release.json
           exit 1
         fi
+
+        RELEASE_ID=$(curl -sf -H "$AUTH" "$API/tags/$TAG" | jq -r '.id')
+        ASSET="nzbdav-app-aarch64-linux-musl"
+        OLD_ASSET_ID=$(curl -sf -H "$AUTH" "$API/$RELEASE_ID/assets" | jq -r ".[] | select(.name == \"$ASSET\") | .id")
+        [ -n "$OLD_ASSET_ID" ] && curl -sf -X DELETE -H "$AUTH" "https://api.github.com/repos/$REPO/releases/assets/$OLD_ASSET_ID"
+        curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+          "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$ASSET" \
+          --data-binary @"$ASSET" > /dev/null
+        echo "Uploaded $ASSET to release $TAG"
 
   - name: push-github
     image: alpine/git
