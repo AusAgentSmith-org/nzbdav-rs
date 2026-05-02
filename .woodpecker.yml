@@ -120,7 +120,8 @@ steps:
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
       - apt-get update -qq && apt-get install -y -qq xz-utils
-      - curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ --strip-components=1 -C /usr/local/bin/ zig-linux-x86_64-0.14.0/zig
+      - curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz | tar -xJ -C /opt/
+      - export PATH="/opt/zig-linux-x86_64-0.13.0:$PATH"
       - cargo install cargo-zigbuild --locked
       - rustup target add aarch64-apple-darwin
       - cargo zigbuild --release --target aarch64-apple-darwin -p nzbdav-app
