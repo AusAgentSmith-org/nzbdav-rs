@@ -267,7 +267,7 @@ pub fn mock_provider_for_file(
         .collect();
 
     let mut backend = MockArticleBackend::new();
-    for (mid, art) in message_ids.iter().zip(articles.into_iter()) {
+    for (mid, art) in message_ids.iter().zip(articles) {
         backend.add(mid.clone(), art);
     }
 

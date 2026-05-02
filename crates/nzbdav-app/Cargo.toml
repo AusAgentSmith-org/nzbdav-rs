@@ -2,6 +2,7 @@
 name = "nzbdav-app"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 nzbdav-core = { workspace = true, features = ["sqlite"] }

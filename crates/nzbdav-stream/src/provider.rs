@@ -86,7 +86,7 @@ impl UsenetArticleProvider {
             let reserved = ((total as f64) * HIGH_PRIORITY_RESERVE_FRACTION).ceil() as usize;
             // Always leave at least one low-priority slot so ingest can make
             // progress even on tiny pools.
-            let reserved = reserved.min(total.saturating_sub(1)).max(0);
+            let reserved = reserved.min(total.saturating_sub(1));
             Arc::new(PrioritizedSemaphore::new(total, reserved))
         }))
     }
