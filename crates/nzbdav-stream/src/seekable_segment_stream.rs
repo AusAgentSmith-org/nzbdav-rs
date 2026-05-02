@@ -151,7 +151,7 @@ impl SeekableSegmentStream {
                     debug!(error = %e, guess_idx, iteration, "yenc header fetch failed, using estimate");
                     // Fall back to estimate
                     let avg = self.file_size / n as u64;
-                    let est = (target_byte / avg).min(n as u64 - 1) as usize;
+                    let est = target_byte.checked_div(avg).unwrap_or(0).min(n as u64 - 1) as usize;
                     return Ok(FoundSegment {
                         index: est.saturating_sub(1),
                         start_byte: est.saturating_sub(1) as u64 * avg,
@@ -192,11 +192,7 @@ impl SeekableSegmentStream {
 
         // Fallback estimate
         let avg = self.file_size / n as u64;
-        let est = if avg > 0 {
-            (target_byte / avg).min(n as u64 - 1) as usize
-        } else {
-            0
-        };
+        let est = target_byte.checked_div(avg).unwrap_or(0).min(n as u64 - 1) as usize;
         Ok(FoundSegment {
             index: est.saturating_sub(1),
             start_byte: est.saturating_sub(1) as u64 * avg,
@@ -225,15 +221,14 @@ impl SeekableSegmentStream {
         // file_size may be raw yEnc bytes (~3% larger than decoded).
         let n = segment_ids.len() as u64;
         let decoded_est = (file_size as f64 * 0.97) as u64;
-        let avg_decoded = if n > 0 { decoded_est / n } else { 1 };
+        let avg_decoded = decoded_est.checked_div(n).unwrap_or(1);
 
         // How many segments from the end do we need?
         let bytes_from_end = decoded_est.saturating_sub(target);
-        let segs_needed = if avg_decoded > 0 {
-            (bytes_from_end / avg_decoded) + 5 // generous margin
-        } else {
-            n
-        };
+        let segs_needed = bytes_from_end
+            .checked_div(avg_decoded)
+            .map(|segments| segments + 5) // generous margin
+            .unwrap_or(n);
         let est_idx = n.saturating_sub(segs_needed) as usize;
 
         // Don't discard — let the handler's Take limit the output.
