@@ -2,6 +2,7 @@
 name = "nzbdav-dav"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "WebDAV protocol handlers for nzbdav"
 

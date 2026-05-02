@@ -7,13 +7,13 @@ when:
 
 steps:
   - name: fmt
-    image: rust:1.88-bookworm
+    image: rust:1.95.0-bookworm
     commands:
       - rustup component add rustfmt
       - cargo fmt --all -- --check
 
   - name: check
-    image: rust:1.88-bookworm
+    image: rust:1.95.0-bookworm
     environment:
       CARGO_REGISTRIES_FORGEJO_TOKEN:
         from_secret: git_auth_token
@@ -23,7 +23,7 @@ steps:
       - cargo check --workspace
 
   - name: test
-    image: rust:1.88-bookworm
+    image: rust:1.95.0-bookworm
     environment:
       CARGO_REGISTRIES_FORGEJO_TOKEN:
         from_secret: git_auth_token
@@ -33,7 +33,7 @@ steps:
       - cargo test --workspace
 
   - name: clippy
-    image: rust:1.88-bookworm
+    image: rust:1.95.0-bookworm
     environment:
       CARGO_REGISTRIES_FORGEJO_TOKEN:
         from_secret: git_auth_token
