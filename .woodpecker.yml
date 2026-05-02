@@ -101,8 +101,8 @@ steps:
       OPENSSL_STATIC: "1"
       OPENSSL_DIR: /tmp/ssl-arm64
     commands:
-      - apt-get update -qq && apt-get install -y -qq curl
       - |
+        apt-get update -qq && apt-get install -y -qq curl
         OSSL=3.4.1
         curl -fsSL "https://www.openssl.org/source/openssl-${OSSL}.tar.gz" | tar xz -C /tmp
         cd /tmp/openssl-${OSSL}
