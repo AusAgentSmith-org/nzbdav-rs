@@ -110,7 +110,7 @@ steps:
       - cp target/aarch64-unknown-linux-musl/release/nzbdav-app nzbdav-app-aarch64-linux-musl
 
   - name: cross-build-macos-arm64
-    image: ghcr.io/rust-cross/cargo-zigbuild
+    image: rust:1.95.0-bookworm
     when:
       - event: tag
     environment:
@@ -119,7 +119,9 @@ steps:
     commands:
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
-      - rustup update stable
+      - apt-get update -qq && apt-get install -y -qq xz-utils
+      - curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ --strip-components=1 -C /usr/local/bin/ zig-linux-x86_64-0.14.0/zig
+      - cargo install cargo-zigbuild --locked
       - rustup target add aarch64-apple-darwin
       - cargo zigbuild --release --target aarch64-apple-darwin -p nzbdav-app
       - cp target/aarch64-apple-darwin/release/nzbdav-app nzbdav-app-aarch64-apple-darwin
