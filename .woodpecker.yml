@@ -119,6 +119,7 @@ steps:
     commands:
       - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
       - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
+      - rustup update stable
       - rustup target add aarch64-apple-darwin
       - cargo zigbuild --release --target aarch64-apple-darwin -p nzbdav-app
       - cp target/aarch64-apple-darwin/release/nzbdav-app nzbdav-app-aarch64-apple-darwin
