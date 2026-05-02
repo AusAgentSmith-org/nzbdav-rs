@@ -103,7 +103,7 @@ steps:
     commands:
       - apt-get update -qq && apt-get install -y -qq curl
       - curl -fsSL https://www.openssl.org/source/openssl-3.4.1.tar.gz | tar xz -C /tmp
-      - (cd /tmp/openssl-3.4.1 && CC=/usr/local/musl/bin/aarch64-unknown-linux-musl-gcc AR=/usr/local/musl/bin/aarch64-unknown-linux-musl-ar RANLIB=/usr/local/musl/bin/aarch64-unknown-linux-musl-ranlib ./Configure linux-aarch64 --prefix=/tmp/ssl-arm64 no-shared no-dso no-tests no-ui-console no-async no-deprecated -fPIC -O2 && make -j4 build_libs && make install_dev)
+      - (cd /tmp/openssl-3.4.1 && CC=/usr/local/musl/bin/aarch64-unknown-linux-musl-gcc AR=/usr/local/musl/bin/aarch64-unknown-linux-musl-ar RANLIB=/usr/local/musl/bin/aarch64-unknown-linux-musl-ranlib ./Configure linux-aarch64 --prefix=/tmp/ssl-arm64 no-shared no-dso no-tests no-ui-console no-async -fPIC -O2 && make -j4 build_libs && make install_dev)
       - rustup update stable
       - cargo build --release --target aarch64-unknown-linux-musl -p nzbdav-app
       - /usr/local/musl/bin/aarch64-unknown-linux-musl-strip target/aarch64-unknown-linux-musl/release/nzbdav-app
