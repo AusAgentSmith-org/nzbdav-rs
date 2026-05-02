@@ -109,24 +109,6 @@ steps:
       - /usr/local/musl/bin/aarch64-unknown-linux-musl-strip target/aarch64-unknown-linux-musl/release/nzbdav-app
       - cp target/aarch64-unknown-linux-musl/release/nzbdav-app nzbdav-app-aarch64-linux-musl
 
-  - name: cross-build-macos-arm64
-    image: rust:1.95.0-bookworm
-    when:
-      - event: tag
-    environment:
-      CARGO_REGISTRIES_FORGEJO_TOKEN:
-        from_secret: git_auth_token
-    commands:
-      - mkdir -p $CARGO_HOME && printf '[registries.forgejo]\nindex = "sparse+http://100.92.54.45:3002/api/packages/indexarr/cargo/"\ncredential-provider = "cargo:token"\n' >> $CARGO_HOME/config.toml
-      - export CARGO_REGISTRIES_FORGEJO_TOKEN="token $CARGO_REGISTRIES_FORGEJO_TOKEN"
-      - apt-get update -qq && apt-get install -y -qq xz-utils
-      - curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz | tar -xJ -C /opt/
-      - export PATH="/opt/zig-linux-x86_64-0.13.0:$PATH"
-      - cargo install cargo-zigbuild --locked
-      - rustup target add aarch64-apple-darwin
-      - cargo zigbuild --release --target aarch64-apple-darwin -p nzbdav-app
-      - cp target/aarch64-apple-darwin/release/nzbdav-app nzbdav-app-aarch64-apple-darwin
-
   - name: push-ghcr
     image: quay.io/skopeo/stable
     when:
@@ -162,7 +144,7 @@ steps:
         git remote add github "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" 2>/dev/null || true
         git push github "refs/tags/$TAG" --force
 
-        BODY=$(printf "## Binaries\n\n- \`nzbdav-app-x86_64-linux-musl\` — Linux x86_64 (static)\n- \`nzbdav-app-aarch64-linux-musl\` — Linux ARM64 (static)\n- \`nzbdav-app-aarch64-apple-darwin\` — macOS Apple Silicon (unsigned — run \`xattr -dr com.apple.quarantine nzbdav-app-aarch64-apple-darwin\` if blocked by Gatekeeper)\n\n## Docker Images\n\n- \`ghcr.io/ausagentsmith-org/nzbdav-rs:%s\`\n- \`docker.io/ausagentsmith/nzbdav-rs:%s\`\n" "$TAG" "$TAG")
+        BODY=$(printf "## Binaries\n\n- \`nzbdav-app-x86_64-linux-musl\` — Linux x86_64 (static)\n- \`nzbdav-app-aarch64-linux-musl\` — Linux ARM64 (static)\n- \`nzbdav-app-aarch64-apple-darwin\` — macOS Apple Silicon (unsigned — run \`xattr -dr com.apple.quarantine nzbdav-app-aarch64-apple-darwin\` if blocked by Gatekeeper; uploaded separately by CI)\n\n## Docker Images\n\n- \`ghcr.io/ausagentsmith-org/nzbdav-rs:%s\`\n- \`docker.io/ausagentsmith/nzbdav-rs:%s\`\n" "$TAG" "$TAG")
         PAYLOAD=$(jq -n --arg tag "$TAG" --arg name "nzbdav-rs $TAG" --arg body "$BODY" \
           '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
 
@@ -186,7 +168,7 @@ steps:
         fi
 
         RELEASE_ID=$(curl -sf -H "$AUTH" "$API/tags/$TAG" | jq -r '.id')
-        for ASSET in nzbdav-app-x86_64-linux-musl nzbdav-app-aarch64-linux-musl nzbdav-app-aarch64-apple-darwin; do
+        for ASSET in nzbdav-app-x86_64-linux-musl nzbdav-app-aarch64-linux-musl; do
           OLD_ASSET_ID=$(curl -sf -H "$AUTH" "$API/$RELEASE_ID/assets" | jq -r ".[] | select(.name == \"$ASSET\") | .id")
           [ -n "$OLD_ASSET_ID" ] && curl -sf -X DELETE -H "$AUTH" "https://api.github.com/repos/$REPO/releases/assets/$OLD_ASSET_ID"
           curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \

@@ -1,0 +1,47 @@
+name: macOS ARM64 Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build nzbdav-app
+        run: cargo build --release -p nzbdav-app
+
+      - name: Rename binary
+        run: cp target/release/nzbdav-app nzbdav-app-aarch64-apple-darwin
+
+      - name: Wait for GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Waiting for release $TAG to be created by Woodpecker..."
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+              echo "Release $TAG found."
+              break
+            fi
+            echo "Attempt $i/30 — release not ready yet, sleeping 30s..."
+            sleep 30
+          done
+          gh release view "$TAG" --repo "${{ github.repository }}" || { echo "Release $TAG never appeared."; exit 1; }
+
+      - name: Upload binary to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release upload "$TAG" nzbdav-app-aarch64-apple-darwin --clobber --repo "${{ github.repository }}"
+          echo "Uploaded nzbdav-app-aarch64-apple-darwin to release $TAG"

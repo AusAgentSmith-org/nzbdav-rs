@@ -1447,9 +1447,9 @@ dependencies = [
 
 [[package]]
 name = "nzb-nntp"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6588351d5b892cfd2fc8f87427acfbc4c42556647b370a093bca2051b1eba8"
+checksum = "be840bd27aa79c9dc3ad8bd78f27d244704e189259cacb44e4fb78c9aa8a77bf"
 dependencies = [
  "anyhow",
  "arc-swap",
