@@ -85,8 +85,10 @@ steps:
     image: rust:1.95.0-alpine3.21
     when:
       - event: tag
+    environment:
+      OPENSSL_STATIC: "1"
     commands:
-      - apk add --no-cache musl-dev build-base git
+      - apk add --no-cache musl-dev build-base openssl-dev openssl-libs-static git
       - cargo build --release -p nzbdav-app
       - strip target/release/nzbdav-app
       - cp target/release/nzbdav-app nzbdav-app-x86_64-linux-musl
