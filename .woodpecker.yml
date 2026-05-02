@@ -81,6 +81,16 @@ steps:
       build_args_from_env:
         - CARGO_REGISTRIES_FORGEJO_TOKEN
 
+  - name: cross-build-amd64
+    image: rust:1.95.0-alpine3.21
+    when:
+      - event: tag
+    commands:
+      - apk add --no-cache musl-dev build-base git
+      - cargo build --release -p nzbdav-app
+      - strip target/release/nzbdav-app
+      - cp target/release/nzbdav-app nzbdav-app-x86_64-linux-musl
+
   - name: cross-build-arm64
     image: messense/rust-musl-cross:aarch64-musl
     when:
@@ -150,13 +160,14 @@ steps:
         fi
 
         RELEASE_ID=$(curl -sf -H "$AUTH" "$API/tags/$TAG" | jq -r '.id')
-        ASSET="nzbdav-app-aarch64-linux-musl"
-        OLD_ASSET_ID=$(curl -sf -H "$AUTH" "$API/$RELEASE_ID/assets" | jq -r ".[] | select(.name == \"$ASSET\") | .id")
-        [ -n "$OLD_ASSET_ID" ] && curl -sf -X DELETE -H "$AUTH" "https://api.github.com/repos/$REPO/releases/assets/$OLD_ASSET_ID"
-        curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
-          "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$ASSET" \
-          --data-binary @"$ASSET" > /dev/null
-        echo "Uploaded $ASSET to release $TAG"
+        for ASSET in nzbdav-app-x86_64-linux-musl nzbdav-app-aarch64-linux-musl; do
+          OLD_ASSET_ID=$(curl -sf -H "$AUTH" "$API/$RELEASE_ID/assets" | jq -r ".[] | select(.name == \"$ASSET\") | .id")
+          [ -n "$OLD_ASSET_ID" ] && curl -sf -X DELETE -H "$AUTH" "https://api.github.com/repos/$REPO/releases/assets/$OLD_ASSET_ID"
+          curl -sf -X POST -H "$AUTH" -H "Content-Type: application/octet-stream" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$ASSET" \
+            --data-binary @"$ASSET" > /dev/null
+          echo "Uploaded $ASSET to release $TAG"
+        done
 
   - name: push-github
     image: alpine/git
