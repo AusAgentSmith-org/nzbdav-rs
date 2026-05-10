@@ -147,33 +147,22 @@ impl QueueItemProcessor {
             );
         }
 
-        // ── 2. Create job directory ─────────────────────────────────────
+        // ── 2. Prepare output paths ─────────────────────────────────────
         let category = &queue_item.category;
         let content_root_path = "/content/";
 
         let parent_path = if category.is_empty() {
             content_root_path.to_string()
         } else {
-            let category_path = format!("{content_root_path}{category}/");
-            let _category_dir =
-                ensure_directory(db, &category_path, category, content_root_path).await?;
-            category_path
+            format!("{content_root_path}{category}/")
         };
         let job_dir_path = format!("{parent_path}{}/", queue_item.job_name);
-
-        let job_dir = ensure_directory_with_history(
-            db,
-            &job_dir_path,
-            &queue_item.job_name,
-            &parent_path,
-            Some(queue_item.id),
-        )
-        .await?;
+        let planned_job_dir_id = Uuid::new_v4();
 
         debug!(
-            job_dir_id = %job_dir.id,
+            job_dir_id = %planned_job_dir_id,
             path = %job_dir_path,
-            "created job directory"
+            "prepared job directory"
         );
 
         // ── 3. Deobfuscation ────────────────────────────────────────────
@@ -234,6 +223,8 @@ impl QueueItemProcessor {
                         is_par2: false,
                         first_16k: None,
                         hash_16k: None,
+                        first_segment_error: None,
+                        first_segment_missing_article: None,
                     }
                 })
                 .collect();
@@ -301,11 +292,12 @@ impl QueueItemProcessor {
         let stage_start = Instant::now();
         let rar_aggregated = aggregate_rar_files(
             &processed_rar,
-            job_dir.id,
+            planned_job_dir_id,
             &job_dir_path,
             password.as_deref(),
         )?;
-        let plain_aggregated = aggregate_plain_files(&processed_plain, job_dir.id, &job_dir_path);
+        let plain_aggregated =
+            aggregate_plain_files(&processed_plain, planned_job_dir_id, &job_dir_path);
         info!(
             job_name = %queue_item.job_name,
             elapsed_ms = stage_start.elapsed().as_millis() as u64,
@@ -331,7 +323,7 @@ impl QueueItemProcessor {
         let pre_filter_count = items.len();
         rename_duplicates(&mut items);
 
-        let items = filter_blocklisted(items, &self.config.file_blocklist);
+        let mut items = filter_blocklisted(items, &self.config.file_blocklist);
         let blocked_count = pre_filter_count - items.len();
         if blocked_count > 0 {
             info!(
@@ -343,12 +335,21 @@ impl QueueItemProcessor {
         }
 
         if self.config.ensure_importable_video {
-            ensure_importable_video(&items)?;
+            match ensure_importable_video(&items) {
+                Ok(()) => {}
+                Err(PipelineError::NoImportableVideo) => {
+                    if let Some(error) = missing_articles_error(&file_infos) {
+                        return Err(error);
+                    }
+                    return Err(PipelineError::NoImportableVideo);
+                }
+                Err(e) => return Err(e),
+            }
         }
 
-        let strm_items = create_strm_items(
+        let mut strm_items = create_strm_items(
             &items,
-            job_dir.id,
+            planned_job_dir_id,
             &job_dir_path,
             &self.config.webdav_base_url,
         );
@@ -362,9 +363,29 @@ impl QueueItemProcessor {
 
         // ── 8. Persist to database ──────────────────────────────────────
         let stage_start = Instant::now();
+        let job_dir = ensure_output_directory(
+            db,
+            category,
+            content_root_path,
+            &parent_path,
+            &job_dir_path,
+            &queue_item.job_name,
+            planned_job_dir_id,
+            queue_item.id,
+        )
+        .await?;
+
         let surviving_ids: std::collections::HashSet<Uuid> = items.iter().map(|i| i.id).collect();
 
         let mut total_created: usize = 0;
+        if job_dir.id != planned_job_dir_id {
+            for item in &mut items {
+                item.parent_id = Some(job_dir.id);
+            }
+            for item in &mut strm_items {
+                item.parent_id = Some(job_dir.id);
+            }
+        }
 
         for mut item in items {
             if let Some((_id, multipart)) = multipart_blobs.iter().find(|(id, _)| *id == item.id) {
@@ -419,6 +440,53 @@ impl QueueItemProcessor {
 
 // ── Helper functions ────────────────────────────────────────────────────────
 
+fn missing_articles_error(file_infos: &[NzbFileInfo]) -> Option<PipelineError> {
+    let missing_count = file_infos
+        .iter()
+        .filter(|f| f.first_segment_missing_article.is_some())
+        .count();
+
+    if missing_count == 0 {
+        return None;
+    }
+
+    let first_missing = file_infos
+        .iter()
+        .find_map(|f| f.first_segment_missing_article.as_deref())
+        .unwrap_or("unknown");
+
+    Some(PipelineError::MissingArticles(format!(
+        "{missing_count}/{} files could not fetch first segments; first missing article: {first_missing}",
+        file_infos.len()
+    )))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn ensure_output_directory(
+    db: &dyn DavDatabase,
+    category: &str,
+    content_root_path: &str,
+    parent_path: &str,
+    job_dir_path: &str,
+    job_name: &str,
+    planned_job_dir_id: Uuid,
+    history_item_id: Uuid,
+) -> Result<DavItem> {
+    if !category.is_empty() {
+        let _category_dir = ensure_directory(db, parent_path, category, content_root_path).await?;
+    }
+
+    ensure_directory_with_history_and_id(
+        db,
+        job_dir_path,
+        job_name,
+        parent_path,
+        planned_job_dir_id,
+        Some(history_item_id),
+    )
+    .await
+}
+
 /// Ensure a directory exists at `path`; create it if missing.
 async fn ensure_directory(
     db: &dyn DavDatabase,
@@ -434,15 +502,16 @@ async fn ensure_directory(
         PipelineError::Other(format!("parent directory not found: {parent_path}"))
     })?;
 
-    create_directory(db, path, name, parent.id, None).await
+    create_directory(db, Uuid::new_v4(), path, name, parent.id, None).await
 }
 
 /// Ensure a directory exists, with an optional history_item_id.
-async fn ensure_directory_with_history(
+async fn ensure_directory_with_history_and_id(
     db: &dyn DavDatabase,
     path: &str,
     name: &str,
     parent_path: &str,
+    id: Uuid,
     history_item_id: Option<Uuid>,
 ) -> Result<DavItem> {
     if let Some(existing) = db.get_dav_item_by_path(path).await? {
@@ -453,19 +522,20 @@ async fn ensure_directory_with_history(
         PipelineError::Other(format!("parent directory not found: {parent_path}"))
     })?;
 
-    create_directory(db, path, name, parent.id, history_item_id).await
+    create_directory(db, id, path, name, parent.id, history_item_id).await
 }
 
 /// Create and insert a new directory `DavItem`.
 async fn create_directory(
     db: &dyn DavDatabase,
+    id: Uuid,
     path: &str,
     name: &str,
     parent_id: Uuid,
     history_item_id: Option<Uuid>,
 ) -> Result<DavItem> {
     let item = DavItem {
-        id: Uuid::new_v4(),
+        id,
         id_prefix: name
             .chars()
             .next()
@@ -489,4 +559,47 @@ async fn create_directory(
 
     db.insert_dav_item(&item).await?;
     Ok(item)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file_info(first_segment_missing_article: Option<&str>) -> NzbFileInfo {
+        NzbFileInfo {
+            file_index: 0,
+            subject_name: "obfuscated.bin".to_owned(),
+            yenc_name: None,
+            resolved_name: "obfuscated.bin".to_owned(),
+            file_size: 123,
+            segment_ids: Vec::new(),
+            is_rar: false,
+            is_par2: false,
+            first_16k: None,
+            hash_16k: None,
+            first_segment_error: first_segment_missing_article
+                .map(|id| format!("article not found: {id}")),
+            first_segment_missing_article: first_segment_missing_article.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn missing_articles_error_reports_first_missing_article() {
+        let error = missing_articles_error(&[
+            file_info(Some("missing-1@example.test")),
+            file_info(None),
+            file_info(Some("missing-2@example.test")),
+        ])
+        .unwrap();
+
+        let message = error.to_string();
+        assert!(message.contains("missing articles"));
+        assert!(message.contains("2/3 files"));
+        assert!(message.contains("missing-1@example.test"));
+    }
+
+    #[test]
+    fn missing_articles_error_ignores_non_missing_first_segment_fallbacks() {
+        assert!(missing_articles_error(&[file_info(None)]).is_none());
+    }
 }

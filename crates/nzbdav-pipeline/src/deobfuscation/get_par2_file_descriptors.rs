@@ -115,7 +115,7 @@ async fn fetch_all_segments(
     let total = segment_ids.len();
 
     for (i, message_id) in segment_ids.iter().enumerate() {
-        let decoded = provider.fetch_decoded(message_id).await.map_err(|e| {
+        let decoded = provider.fetch_decoded_low(message_id).await.map_err(|e| {
             warn!(
                 segment = i,
                 message_id = %message_id,

@@ -55,6 +55,9 @@ pub async fn process_rar_files(
                 remaining_skipped = total_rar - 1,
                 "first RAR failed — skipping remaining volumes"
             );
+            if e.is_missing_articles() || is_rar_structural_error(&e) {
+                return Err(e);
+            }
             return Ok(Vec::new());
         }
     };
@@ -72,20 +75,16 @@ pub async fn process_rar_files(
     }
 
     // ── Process remaining RAR files in parallel ─────────────────────
-    let priority_sem = provider.priority_semaphore();
     let completed = Arc::new(AtomicUsize::new(1)); // 1 = probe already done
     let mut join_set = JoinSet::new();
 
     for rar_file in &rar_only[1..] {
         let provider = Arc::clone(provider);
-        let sem = Arc::clone(&priority_sem);
         let completed = Arc::clone(&completed);
         let pw = password.map(String::from);
         let file_index = rar_file.file_index;
         let resolved_name = rar_file.resolved_name.clone();
         let segment_ids = rar_file.segment_ids.clone();
-
-        let permit = sem.acquire_low().await;
 
         join_set.spawn(async move {
             let result = fetch_and_parse_rar(
@@ -96,7 +95,6 @@ pub async fn process_rar_files(
                 pw.as_deref(),
             )
             .await;
-            drop(permit);
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if done.is_multiple_of(10) || done == total_rar {
                 info!(progress = done, total = total_rar, "parsing RAR headers");
@@ -165,6 +163,13 @@ pub async fn process_rar_files(
     Ok(results)
 }
 
+fn is_rar_structural_error(error: &PipelineError) -> bool {
+    matches!(
+        error,
+        PipelineError::UnsupportedRarCompression(_) | PipelineError::Rar(_)
+    )
+}
+
 /// Extract `ProcessedFile` entries from parsed file headers.
 fn collect_file_headers(
     file_headers: &[nzbdav_rar::FileHeader],
@@ -218,10 +223,14 @@ async fn fetch_and_parse_rar(
     let max_header_segments = 3.min(segment_ids.len());
     let mut data = Vec::new();
     for segment_id in &segment_ids[..max_header_segments] {
-        let segment_data = provider.fetch_decoded(segment_id).await.map_err(|e| {
-            PipelineError::Other(format!(
-                "failed to fetch segment {segment_id} for RAR file {resolved_name}: {e}",
-            ))
+        let segment_data = provider.fetch_decoded_low(segment_id).await.map_err(|e| {
+            warn!(
+                message_id = %segment_id,
+                name = %resolved_name,
+                error = %e,
+                "failed to fetch RAR segment"
+            );
+            PipelineError::Stream(e)
         })?;
         data.extend_from_slice(&segment_data);
     }
@@ -236,7 +245,45 @@ async fn fetch_and_parse_rar(
     })
     .await
     .map_err(|e| PipelineError::Other(format!("spawn_blocking join error: {e}")))?
-    .map_err(|e| PipelineError::Other(format!("RAR parse error: {e}")))?;
+    .map_err(map_rar_error)?;
 
     Ok(file_headers)
+}
+
+fn map_rar_error(error: nzbdav_rar::error::RarError) -> PipelineError {
+    match error {
+        nzbdav_rar::error::RarError::UnsupportedCompressionMethod(method) => {
+            PipelineError::UnsupportedRarCompression(method)
+        }
+        other => PipelineError::Rar(other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nzbdav_rar::error::RarError;
+
+    #[test]
+    fn maps_unsupported_compression_to_pipeline_error() {
+        let error = map_rar_error(RarError::UnsupportedCompressionMethod(4));
+
+        assert!(matches!(error, PipelineError::UnsupportedRarCompression(4)));
+    }
+
+    #[test]
+    fn treats_rar_parse_failures_as_structural() {
+        assert!(is_rar_structural_error(
+            &PipelineError::UnsupportedRarCompression(4)
+        ));
+        assert!(is_rar_structural_error(&PipelineError::Rar(
+            RarError::SignatureNotFound
+        )));
+        assert!(!is_rar_structural_error(&PipelineError::Stream(
+            nzbdav_stream::error::StreamError::ArticleNotFound("missing".to_owned())
+        )));
+        assert!(!is_rar_structural_error(&PipelineError::Other(
+            "temporary fetch failure".to_owned()
+        )));
+    }
 }

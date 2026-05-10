@@ -6,13 +6,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use md5::{Digest, Md5};
 use nzb_core::models::NzbJob;
-use nzbdav_core::util::is_par2_file;
+use nzbdav_core::util::{is_par2_file, is_rar_file};
 use nzbdav_stream::provider::UsenetArticleProvider;
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 use super::NzbFileInfo;
-use crate::error::Result;
+use crate::error::{PipelineError, Result};
 
 /// Size of the first-N-bytes window used for 16KB MD5 matching with PAR2.
 const FIRST_16K: usize = 16 * 1024;
@@ -38,14 +38,12 @@ pub async fn fetch_first_segments(
         return fetch_sequential(provider, job).await;
     }
 
-    let priority_sem = provider.priority_semaphore();
     let mut join_set = JoinSet::new();
     let total_files = job.files.len();
     let completed = Arc::new(AtomicUsize::new(0));
 
     for (index, nzb_file) in job.files.iter().enumerate() {
         let provider = Arc::clone(provider);
-        let sem = Arc::clone(&priority_sem);
         let completed = Arc::clone(&completed);
 
         // Sort articles by segment number to ensure correct byte order.
@@ -69,10 +67,6 @@ pub async fn fetch_first_segments(
         let file_size = nzb_file.bytes;
         let is_par2 = nzb_file.is_par2 || is_par2_file(&subject_name);
 
-        // Acquire a low-priority permit BEFORE spawning so ingest cannot
-        // starve WebDAV playback (which uses reserved high-priority slots).
-        let permit = sem.acquire_low().await;
-
         join_set.spawn(async move {
             let result = fetch_single_first_segment(
                 &provider,
@@ -80,11 +74,28 @@ pub async fn fetch_first_segments(
                 &first_message_id,
                 &subject_name,
                 file_size,
-                segment_ids,
+                segment_ids.clone(),
                 is_par2,
             )
             .await;
-            drop(permit);
+            let info = match result {
+                Ok(info) => info,
+                Err(e) => {
+                    warn!(
+                        file = %subject_name,
+                        error = %e,
+                        "failed to fetch first segment, file will use subject name"
+                    );
+                    fallback_file_info(
+                        index,
+                        &subject_name,
+                        file_size,
+                        segment_ids,
+                        is_par2,
+                        Some(&e),
+                    )
+                }
+            };
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             if done.is_multiple_of(10) || done == total_files {
                 info!(
@@ -93,7 +104,7 @@ pub async fn fetch_first_segments(
                     "fetching first segments"
                 );
             }
-            result
+            info
         });
     }
 
@@ -134,7 +145,7 @@ async fn fetch_sequential(
             first_message_id,
             &nzb_file.filename,
             nzb_file.bytes,
-            segment_ids,
+            segment_ids.clone(),
             is_par2,
         )
         .await
@@ -146,6 +157,14 @@ async fn fetch_sequential(
                     error = %e,
                     "failed to fetch first segment, file will use subject name"
                 );
+                file_infos.push(fallback_file_info(
+                    index,
+                    &nzb_file.filename,
+                    nzb_file.bytes,
+                    segment_ids,
+                    is_par2,
+                    Some(&e),
+                ));
             }
         }
 
@@ -167,16 +186,13 @@ async fn fetch_sequential(
 }
 
 async fn collect_results(
-    join_set: &mut JoinSet<Result<NzbFileInfo>>,
+    join_set: &mut JoinSet<NzbFileInfo>,
     total: usize,
 ) -> Result<Vec<NzbFileInfo>> {
     let mut file_infos = Vec::with_capacity(total);
     while let Some(result) = join_set.join_next().await {
         match result {
-            Ok(Ok(info)) => file_infos.push(info),
-            Ok(Err(e)) => {
-                warn!(error = %e, "failed to fetch first segment, file will use subject name");
-            }
+            Ok(info) => file_infos.push(info),
             Err(e) => {
                 warn!(error = %e, "task panicked while fetching first segment");
             }
@@ -192,6 +208,32 @@ async fn collect_results(
     Ok(file_infos)
 }
 
+fn fallback_file_info(
+    file_index: usize,
+    subject_name: &str,
+    file_size: u64,
+    segment_ids: Vec<String>,
+    is_par2: bool,
+    error: Option<&PipelineError>,
+) -> NzbFileInfo {
+    NzbFileInfo {
+        file_index,
+        subject_name: subject_name.to_owned(),
+        yenc_name: None,
+        resolved_name: subject_name.to_owned(),
+        file_size,
+        segment_ids,
+        is_rar: is_rar_file(subject_name),
+        is_par2,
+        first_16k: None,
+        hash_16k: None,
+        first_segment_error: error.map(ToString::to_string),
+        first_segment_missing_article: error
+            .and_then(PipelineError::missing_article_id)
+            .map(str::to_owned),
+    }
+}
+
 async fn fetch_single_first_segment(
     provider: &UsenetArticleProvider,
     file_index: usize,
@@ -201,7 +243,7 @@ async fn fetch_single_first_segment(
     segment_ids: Vec<String>,
     is_par2: bool,
 ) -> Result<NzbFileInfo> {
-    let decoded = provider.fetch_decoded(message_id).await?;
+    let decoded = provider.fetch_decoded_low(message_id).await?;
 
     let first_16k_len = decoded.len().min(FIRST_16K);
     let first_16k_data = decoded[..first_16k_len].to_vec();
@@ -228,5 +270,110 @@ async fn fetch_single_first_segment(
         is_par2,
         first_16k: Some(first_16k_data),
         hash_16k: Some(hash_16k),
+        first_segment_error: None,
+        first_segment_missing_article: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use nzb_core::models::{Article, JobStatus, NzbFile, NzbJob, Priority};
+    use nzbdav_stream::provider::UsenetArticleProvider;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    fn article(message_id: &str, segment_number: u32) -> Article {
+        Article {
+            message_id: message_id.to_owned(),
+            segment_number,
+            bytes: 123,
+            downloaded: false,
+            data_begin: None,
+            data_size: None,
+            crc32: None,
+            tried_servers: Vec::new(),
+            tries: 0,
+        }
+    }
+
+    fn job_with_file(filename: &str, articles: Vec<Article>) -> NzbJob {
+        NzbJob {
+            id: "job-1".to_owned(),
+            name: "job".to_owned(),
+            category: String::new(),
+            status: JobStatus::Queued,
+            priority: Priority::Normal,
+            total_bytes: 123,
+            downloaded_bytes: 0,
+            file_count: 1,
+            files_completed: 0,
+            article_count: articles.len(),
+            articles_downloaded: 0,
+            articles_failed: 0,
+            added_at: Utc::now(),
+            completed_at: None,
+            work_dir: PathBuf::new(),
+            output_dir: PathBuf::new(),
+            password: None,
+            error_message: None,
+            speed_bps: 0,
+            server_stats: Vec::new(),
+            files: vec![NzbFile {
+                id: "file-1".to_owned(),
+                filename: filename.to_owned(),
+                bytes: 123,
+                bytes_downloaded: 0,
+                is_par2: is_par2_file(filename),
+                par2_setname: None,
+                par2_vol: None,
+                par2_blocks: None,
+                assembled: false,
+                groups: Vec::new(),
+                articles,
+            }],
+        }
+    }
+
+    #[test]
+    fn fallback_marks_rar_by_subject_name() {
+        let info = fallback_file_info(
+            7,
+            "movie.part001.rar",
+            42,
+            vec!["seg-1@example.test".to_owned()],
+            false,
+            None,
+        );
+
+        assert_eq!(info.file_index, 7);
+        assert_eq!(info.resolved_name, "movie.part001.rar");
+        assert!(info.is_rar);
+        assert!(!info.is_par2);
+        assert!(info.first_16k.is_none());
+        assert!(info.hash_16k.is_none());
+        assert!(info.first_segment_error.is_none());
+        assert!(info.first_segment_missing_article.is_none());
+    }
+
+    #[tokio::test]
+    async fn fetch_failure_keeps_subject_name_fallback() {
+        let provider = Arc::new(UsenetArticleProvider::new(Vec::new()));
+        let job = job_with_file("movie.mkv", vec![article("missing@example.test", 1)]);
+
+        let infos = fetch_first_segments(&provider, &job).await.unwrap();
+
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].resolved_name, "movie.mkv");
+        assert_eq!(infos[0].segment_ids, vec!["missing@example.test"]);
+        assert!(!infos[0].is_rar);
+        assert!(!infos[0].is_par2);
+        assert!(infos[0].first_16k.is_none());
+        assert!(infos[0].hash_16k.is_none());
+        assert_eq!(
+            infos[0].first_segment_missing_article.as_deref(),
+            Some("missing@example.test")
+        );
+    }
 }

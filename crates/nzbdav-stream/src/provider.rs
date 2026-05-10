@@ -78,8 +78,8 @@ impl UsenetArticleProvider {
 
     /// Shared priority semaphore sized to the current connection capacity.
     /// Ingest pipelines should `acquire_low` on it so they never starve out
-    /// WebDAV playback, which `acquire_high` (or goes uncapped through the
-    /// pool). Lazily constructed on first access.
+    /// WebDAV playback, which uses `acquire_high`. Lazily constructed on
+    /// first access.
     pub fn priority_semaphore(&self) -> Arc<PrioritizedSemaphore> {
         Arc::clone(self.priority_semaphore.get_or_init(|| {
             let total = self.total_connections().max(1);
@@ -113,9 +113,40 @@ impl UsenetArticleProvider {
     /// Fetch a single article by message-id, decode yEnc, and return the
     /// decoded payload. Tries each server pool in order with failover.
     pub async fn fetch_decoded(&self, message_id: &str) -> Result<Vec<u8>> {
+        self.fetch_decoded_high(message_id).await
+    }
+
+    /// High-priority article fetch for user-facing WebDAV playback.
+    pub async fn fetch_decoded_high(&self, message_id: &str) -> Result<Vec<u8>> {
+        self.fetch_decoded_with_priority(message_id, FetchPriority::High)
+            .await
+    }
+
+    /// Low-priority article fetch for background ingest and metadata probing.
+    pub async fn fetch_decoded_low(&self, message_id: &str) -> Result<Vec<u8>> {
+        self.fetch_decoded_with_priority(message_id, FetchPriority::Low)
+            .await
+    }
+
+    async fn fetch_decoded_with_priority(
+        &self,
+        message_id: &str,
+        priority: FetchPriority,
+    ) -> Result<Vec<u8>> {
         if let Some(fake) = &self.fake {
             return fake.fetch_decoded(message_id).await;
         }
+
+        let sem = self.priority_semaphore();
+        let _permit = match priority {
+            FetchPriority::High => sem.acquire_high().await,
+            FetchPriority::Low => sem.acquire_low().await,
+        };
+
+        self.fetch_decoded_uncapped(message_id).await
+    }
+
+    async fn fetch_decoded_uncapped(&self, message_id: &str) -> Result<Vec<u8>> {
         let pools = self.load_pools();
         let mut last_err: Option<StreamError> = None;
 
@@ -209,9 +240,18 @@ impl UsenetArticleProvider {
     /// Useful for seek interpolation to determine which segment contains a
     /// given byte offset.
     pub async fn yenc_headers(&self, message_id: &str) -> Result<YencHeaders> {
+        self.yenc_headers_high(message_id).await
+    }
+
+    /// High-priority yEnc header fetch for user-facing range seeks.
+    pub async fn yenc_headers_high(&self, message_id: &str) -> Result<YencHeaders> {
         if let Some(fake) = &self.fake {
             return fake.yenc_headers(message_id).await;
         }
+
+        let sem = self.priority_semaphore();
+        let _permit = sem.acquire_high().await;
+
         let pools = self.load_pools();
         let mut last_err: Option<StreamError> = None;
 
@@ -254,6 +294,12 @@ impl UsenetArticleProvider {
 
         Err(last_err.unwrap_or_else(|| StreamError::AllServersExhausted(message_id.to_string())))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FetchPriority {
+    High,
+    Low,
 }
 
 #[cfg(test)]

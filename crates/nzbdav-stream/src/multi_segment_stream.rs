@@ -64,7 +64,7 @@ impl MultiSegmentStream {
              -> BoxFuture<'static, Result<Vec<u8>, StreamError>> {
                 let p = Arc::clone(provider);
                 let mid = segment_ids[idx].clone();
-                Box::pin(async move { p.fetch_decoded(&mid).await })
+                Box::pin(async move { p.fetch_decoded_high(&mid).await })
             };
 
             while next_to_spawn < segment_ids.len() && pending.len() < concurrency {

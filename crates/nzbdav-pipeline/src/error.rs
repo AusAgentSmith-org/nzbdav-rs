@@ -2,8 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PipelineError {
-    #[error("unsupported RAR compression method (only m0/store supported)")]
-    UnsupportedRarCompression,
+    #[error("unsupported RAR compression method: {0} (only m0/store supported)")]
+    UnsupportedRarCompression(u8),
 
     #[error("unsupported 7z compression method")]
     Unsupported7zCompression,
@@ -16,6 +16,9 @@ pub enum PipelineError {
 
     #[error("article not found: {0}")]
     ArticleNotFound(String),
+
+    #[error("missing articles: {0}")]
+    MissingArticles(String),
 
     #[error("non-retryable download error: {0}")]
     NonRetryable(String),
@@ -45,6 +48,21 @@ pub enum PipelineError {
 impl PipelineError {
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Retryable(_))
+    }
+
+    pub fn missing_article_id(&self) -> Option<&str> {
+        match self {
+            Self::ArticleNotFound(id) => Some(id),
+            Self::Stream(
+                nzbdav_stream::error::StreamError::ArticleNotFound(id)
+                | nzbdav_stream::error::StreamError::AllServersExhausted(id),
+            ) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn is_missing_articles(&self) -> bool {
+        matches!(self, Self::MissingArticles(_)) || self.missing_article_id().is_some()
     }
 }
 
