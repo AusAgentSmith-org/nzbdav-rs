@@ -1,3 +1,4 @@
+mod dav_names;
 pub mod file_aggregator;
 pub mod rar_aggregator;
 

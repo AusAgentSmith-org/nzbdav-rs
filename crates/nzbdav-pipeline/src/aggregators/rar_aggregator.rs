@@ -9,6 +9,8 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::types::ProcessedFile;
 
+use super::dav_names::dav_leaf_name;
+
 /// Aggregate RAR-extracted files: group by filename across volumes, compute
 /// virtual file byte ranges, and create `DavMultipartFile` entries.
 ///
@@ -55,16 +57,17 @@ pub fn aggregate_rar_files(
 
         let total_size = offset;
 
+        let dav_name = dav_leaf_name(filename);
         let dav_item = DavItem {
             id: Uuid::new_v4(),
             id_prefix: String::new(),
             created_at: chrono::Utc::now().naive_utc(),
             parent_id: Some(parent_id),
-            name: filename.to_string(),
+            name: dav_name.clone(),
             file_size: Some(total_size),
             item_type: ItemType::UsenetFile,
             sub_type: ItemSubType::MultipartFile,
-            path: format!("{parent_path}{filename}"),
+            path: format!("{parent_path}{dav_name}"),
             release_date: None,
             last_health_check: None,
             next_health_check: None,
@@ -131,4 +134,47 @@ pub fn aggregate_rar_files(
     results.sort_by(|a, b| a.0.name.cmp(&b.0.name));
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn processed_file(filename: &str) -> ProcessedFile {
+        ProcessedFile {
+            filename: filename.to_string(),
+            file_size: 1024,
+            is_directory: false,
+            source_file_index: 0,
+            volume_number: None,
+            file_parts: vec![FilePart {
+                segment_ids: vec!["message-id".to_string()],
+                segment_id_byte_range: LongRange::new(0, 1024),
+                file_part_byte_range: LongRange::new(0, 1024),
+            }],
+            is_encrypted: false,
+            encryption: None,
+        }
+    }
+
+    #[test]
+    fn archive_paths_are_flattened_to_leaf_names() {
+        let parent_id = Uuid::new_v4();
+        let files = vec![processed_file(
+            r"1sAmXP9m2rQ8eEDY2Ko4m4g\ELiFENiC-462x.yaRulB.p0801.4991.noitpmedeR.knahswahS.ehT\The.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE .mkv",
+        )];
+
+        let aggregated =
+            aggregate_rar_files(&files, parent_id, "/content/download/", None).unwrap();
+
+        assert_eq!(aggregated.len(), 1);
+        assert_eq!(
+            aggregated[0].0.name,
+            "The.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE .mkv"
+        );
+        assert_eq!(
+            aggregated[0].0.path,
+            "/content/download/The.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE .mkv"
+        );
+    }
 }

@@ -35,7 +35,7 @@ pub fn multistatus_xml(nodes: &[DavNode], base_href: &str) -> String {
         } else {
             node.item.path.clone()
         };
-        write_response_element(&mut writer, node, &href);
+        write_response_element(&mut writer, node, &encode_href_path(&href));
     }
 
     // </D:multistatus>
@@ -143,6 +143,44 @@ fn write_text_element<W: std::io::Write>(writer: &mut Writer<W>, tag: &str, text
     writer
         .write_event(Event::End(BytesEnd::new(tag)))
         .expect("end");
+}
+
+fn encode_href_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+
+    for byte in path.bytes() {
+        if byte == b'/' || is_path_char(byte) {
+            out.push(byte as char);
+        } else {
+            use std::fmt::Write as _;
+            write!(&mut out, "%{byte:02X}").expect("write to string");
+        }
+    }
+
+    out
+}
+
+fn is_path_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'-' | b'.'
+                | b'_'
+                | b'~'
+                | b'!'
+                | b'$'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'='
+                | b':'
+                | b'@'
+        )
 }
 
 #[cfg(test)]
@@ -262,5 +300,21 @@ mod tests {
             !xml.contains("<D:displayname>Tom & Jerry <2024></D:displayname>"),
             "special chars must be escaped"
         );
+    }
+
+    #[test]
+    fn test_multistatus_href_percent_encoding() {
+        let parent = make_dir_node("download", "/content/download/");
+        let child = make_file_node(
+            "The.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE .mkv",
+            r"/content/download/folder\The.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE .mkv",
+            500,
+        );
+        let xml = multistatus_xml(&[parent, child], "/content/download/");
+
+        assert!(xml.contains(
+            r"<D:href>/content/download/folder%5CThe.Shawshank.Redemption.1994.1080p.BluRay.x264-CiNEFiLE%20.mkv</D:href>"
+        ));
+        assert!(!xml.contains("CiNEFiLE .mkv</D:href>"));
     }
 }
