@@ -29,11 +29,27 @@ pub fn multistatus_xml(nodes: &[DavNode], base_href: &str) -> String {
         .write_event(Event::Start(ms))
         .expect("multistatus start");
 
+    // Derive the URL mount prefix from the first node: the difference between
+    // the request path (base_href, which includes any nesting prefix like /dav)
+    // and the virtual filesystem path (node.item.path). This ensures child hrefs
+    // include the mount point rather than only the raw filesystem path.
+    let url_prefix = if let Some(first) = nodes.first() {
+        let vfs_path = first.item.path.trim_end_matches('/');
+        let request_path = base_href.trim_end_matches('/');
+        if request_path.ends_with(vfs_path) && request_path.len() > vfs_path.len() {
+            request_path[..request_path.len() - vfs_path.len()].to_string()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     for (i, node) in nodes.iter().enumerate() {
         let href = if i == 0 {
             base_href.to_string()
         } else {
-            node.item.path.clone()
+            format!("{}{}", url_prefix, node.item.path)
         };
         write_response_element(&mut writer, node, &encode_href_path(&href));
     }

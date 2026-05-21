@@ -32,6 +32,10 @@ pub struct ApiParams {
     pub password: Option<String>,
     pub start: Option<i64>,
     pub limit: Option<i64>,
+    /// Job label sent by AIOStreams/SABnzbd clients — used as the folder/job name.
+    pub nzbname: Option<String>,
+    /// Comma-separated nzo_ids to filter history results (AIOStreams polling).
+    pub nzo_ids: Option<String>,
     /// Sonarr sends del_files=1 on delete; accepted and ignored.
     #[allow(dead_code)]
     pub del_files: Option<i32>,
@@ -252,13 +256,22 @@ async fn handle_addurl(state: AppState, params: ApiParams) -> Json<serde_json::V
         }
     };
 
-    // Extract filename from URL path, falling back to "download.nzb".
-    let filename = url
-        .rsplit('/')
-        .next()
-        .filter(|s| s.ends_with(".nzb"))
-        .unwrap_or("download.nzb")
-        .to_string();
+    // Prefer nzbname (job label from client) over the URL basename.
+    let filename = match params.nzbname.filter(|s| !s.is_empty()) {
+        Some(name) => {
+            if name.ends_with(".nzb") {
+                name
+            } else {
+                format!("{name}.nzb")
+            }
+        }
+        None => url
+            .rsplit('/')
+            .next()
+            .filter(|s| s.ends_with(".nzb"))
+            .unwrap_or("download.nzb")
+            .to_string(),
+    };
 
     let category = params.cat.unwrap_or_default();
     let priority = params.priority.unwrap_or(0);
@@ -531,34 +544,49 @@ fn handle_history(state: AppState, params: ApiParams) -> Json<serde_json::Value>
         );
     }
 
-    // List history with pagination.
-    let offset = params.start.unwrap_or(0);
-    let limit = params.limit.unwrap_or(50);
-    let items = match history_items::list(&conn, offset, limit) {
-        Ok(items) => items,
-        Err(e) => {
-            warn!(error = %e, "failed to list history");
-            return Json(
-                serde_json::to_value(SimpleResponse {
-                    status: false,
-                    error: Some(format!("database error: {e}")),
-                })
-                .unwrap(),
-            );
-        }
-    };
-    let total = match history_items::count(&conn) {
-        Ok(c) => c as usize,
-        Err(e) => {
-            warn!(error = %e, "failed to count history");
-            return Json(
-                serde_json::to_value(SimpleResponse {
-                    status: false,
-                    error: Some(format!("database error: {e}")),
-                })
-                .unwrap(),
-            );
-        }
+    // When specific nzo_ids are requested, look them up directly so pagination
+    // can't hide the item. Otherwise use normal paginated listing.
+    let (items, total) = if let Some(ref nzo_ids_str) = params.nzo_ids {
+        let ids: Vec<uuid::Uuid> = nzo_ids_str
+            .split(',')
+            .filter_map(|s| uuid::Uuid::parse_str(s.trim()).ok())
+            .collect();
+        let found: Vec<_> = ids
+            .iter()
+            .filter_map(|id| history_items::get_by_id(&conn, *id).ok().flatten())
+            .collect();
+        let len = found.len();
+        (found, len)
+    } else {
+        let offset = params.start.unwrap_or(0);
+        let limit = params.limit.unwrap_or(50);
+        let items = match history_items::list(&conn, offset, limit) {
+            Ok(items) => items,
+            Err(e) => {
+                warn!(error = %e, "failed to list history");
+                return Json(
+                    serde_json::to_value(SimpleResponse {
+                        status: false,
+                        error: Some(format!("database error: {e}")),
+                    })
+                    .unwrap(),
+                );
+            }
+        };
+        let total = match history_items::count(&conn) {
+            Ok(c) => c as usize,
+            Err(e) => {
+                warn!(error = %e, "failed to count history");
+                return Json(
+                    serde_json::to_value(SimpleResponse {
+                        status: false,
+                        error: Some(format!("database error: {e}")),
+                    })
+                    .unwrap(),
+                );
+            }
+        };
+        (items, total)
     };
 
     let slots: Vec<HistorySlot> = items

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{OriginalUri, Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use percent_encoding::percent_decode_str;
@@ -23,6 +23,13 @@ pub type DavState = Arc<DatabaseStore>;
 /// PROPFIND handler — directory listing (depth 0 or 1).
 pub async fn propfind(State(store): State<DavState>, req: Request) -> Response {
     let path = decode_path(req.uri().path());
+    // Use the original (un-stripped) request URI for hrefs so that any mount
+    // prefix (e.g. "/dav") is preserved in the PROPFIND response.
+    let base_href = req
+        .extensions()
+        .get::<OriginalUri>()
+        .map(|u| decode_path(u.path()))
+        .unwrap_or_else(|| path.clone());
     let depth = req
         .headers()
         .get("depth")
@@ -46,7 +53,7 @@ pub async fn propfind(State(store): State<DavState>, req: Request) -> Response {
         }
     }
 
-    let xml = multistatus_xml(&nodes, &path);
+    let xml = multistatus_xml(&nodes, &base_href);
 
     Response::builder()
         .status(StatusCode::MULTI_STATUS)

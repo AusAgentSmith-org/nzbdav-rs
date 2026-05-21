@@ -285,7 +285,7 @@ async fn move_to_history(
     download_dir_id: Option<Uuid>,
 ) {
     let history = HistoryItem {
-        id: Uuid::new_v4(),
+        id: item.id,
         created_at: Utc::now().naive_utc(),
         file_name: item.file_name.clone(),
         job_name: item.job_name.clone(),

@@ -194,12 +194,22 @@ fn build_router(
 ) -> Router {
     use axum::routing::{post, put};
 
-    // SAB API
+    // SAB API — served at /api (root) AND /dav/api (so AIOStreams can use nzbdavUrl=/dav)
     let api_key = cli.api_key.clone();
-    let sab = sab_api::router::sab_router().layer(middleware::from_fn(move |req, next| {
+    let sab = {
         let key = api_key.clone();
-        async move { auth::api_key_auth(key, req, next).await }
-    }));
+        sab_api::router::sab_router().layer(middleware::from_fn(move |req, next| {
+            let k = key.clone();
+            async move { auth::api_key_auth(k, req, next).await }
+        }))
+    };
+    let sab_dav_alias = {
+        let key = api_key;
+        sab_api::router::sab_router().layer(middleware::from_fn(move |req, next| {
+            let k = key.clone();
+            async move { auth::api_key_auth(k, req, next).await }
+        }))
+    };
 
     // Server management REST API
     let servers = Router::new()
@@ -251,7 +261,13 @@ fn build_router(
         .merge(debug_routes.with_state(state.clone()))
         .merge(logs)
         .merge(ws_route)
-        .nest("/dav", dav)
+        // SABnzbd API also reachable at /dav/api so AIOStreams can use nzbdavUrl=http://host/dav
+        .nest(
+            "/dav",
+            Router::new()
+                .merge(sab_dav_alias.with_state(state.clone()))
+                .merge(dav),
+        )
         .route("/", get(frontend::frontend_index))
         .fallback(get(frontend::frontend_fallback))
         .layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024))
