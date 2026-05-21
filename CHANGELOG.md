@@ -4,7 +4,7 @@ All notable changes to nzbdav-rs are documented here.
 
 ---
 
-## [Unreleased] — AIOStreams compatibility
+## [0.5.2] — AIOStreams compatibility
 
 This release resolves all known incompatibilities with
 [AIOStreams](https://github.com/Viren070/AIOStreams), making nzbdav-rs a
