@@ -22,7 +22,7 @@ NZB → Pipeline → Virtual Filesystem → WebDAV → Browser/VLC/rclone
 
 ## Features
 
-- **SABnzbd-compatible API** — drop-in download client for Sonarr, Radarr, Lidarr
+- **SABnzbd-compatible API** — drop-in download client for Sonarr, Radarr, Lidarr, AIOStreams
 - **On-demand streaming** — no local storage; articles fetched from Usenet in real time
 - **RAR5 encrypted archives** — PBKDF2-HMAC-SHA256 key derivation, AES-256-CBC header decryption
 - **Multi-server failover** — priority-ordered connection pools with automatic failover
@@ -32,7 +32,6 @@ NZB → Pipeline → Virtual Filesystem → WebDAV → Browser/VLC/rclone
 - **Concurrent processing** — configurable parallel NZB pipeline
 - **Password support** — extracts from NZB filename `{{password}}` or XML metadata
 - **WebSocket** — real-time status updates
-- **OpenAPI/Swagger** — interactive API documentation
 
 ## Quick Start
 
@@ -101,14 +100,45 @@ nzbdav-rs speaks the SABnzbd API protocol — Sonarr/Radarr don't know the diffe
 
 For file access, mount the WebDAV with rclone and configure a remote path mapping. See [TEST_STACK.md](TEST_STACK.md) for details.
 
+## AIOStreams Integration
+
+[AIOStreams](https://github.com/Viren070/AIOStreams) is a Stremio addon that uses Usenet as a streaming source via the NzbDAV service type. nzbdav-rs is fully compatible with AIOStreams from v0.5.2 onwards.
+
+**Configuration in AIOStreams:**
+
+| Field | Value |
+|-------|-------|
+| URL | `http://your-host:8080/dav` |
+| Public URL | `http://your-public-host:8080/dav` |
+| API Key | your `NZBDAV_API_KEY` |
+| Username | your `NZBDAV_WEBDAV_USER` |
+| Password | your `NZBDAV_WEBDAV_PASS` |
+
+The SABnzbd API is served at both `/api` and `/dav/api` so the single `URL` field satisfies both the WebDAV (`/dav`) and API (`/dav/api`) requirements.
+
+**How it works:**
+
+```
+Stremio → AIOStreams → (NZBHydra2/Newznab) → addurl to nzbdav-rs
+                ↓
+        poll history until Completed
+                ↓
+    WebDAV PROPFIND to discover files
+                ↓
+    307 redirect to /dav/content/{category}/{name}/{file}
+                ↓
+            Stremio streams the video
+```
+
+See [TEST_STACK.md](TEST_STACK.md) for a ready-made Docker Compose stack that wires up nzbdav-rs, NZBHydra2, AIOStreams, and Stremio for local testing.
+
 ## API
 
-- **SABnzbd API**: `/api?mode=addfile|queue|history|version|status|get_cats`
+- **SABnzbd API**: `/api?mode=addfile|addurl|queue|history|version|status|get_cats` (also at `/dav/api`)
 - **Server management**: `GET/POST /api/servers`, `PUT/DELETE /api/servers/{id}`
 - **Settings**: `GET/PUT /api/settings`
 - **Database backup**: `GET /api/backup`
 - **WebSocket**: `ws://host:port/ws` (real-time queue/history/log events)
-- **Interactive docs**: `/ui/swagger.html`
 
 ## License
 

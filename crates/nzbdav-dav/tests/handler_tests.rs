@@ -331,3 +331,69 @@ async fn test_unsupported_method() {
     let (status, _, _) = send_dav(&router, "PATCH", "/", vec![], None).await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
 }
+
+// ---------------------------------------------------------------------------
+// PROPFIND mount prefix (regression test for Bug #2)
+// ---------------------------------------------------------------------------
+
+/// When the DAV router is nested under a prefix (e.g. /dav), Axum strips the
+/// prefix from `req.uri()` before the handler sees it, but stores the original
+/// URI in the `OriginalUri` extension. This test verifies that PROPFIND hrefs
+/// always include the mount prefix so that WebDAV clients receive correct paths.
+///
+/// We simulate the Axum nesting behaviour directly: send a request with path "/"
+/// (as Axum delivers it after stripping the "/dav" prefix) but inject the
+/// `OriginalUri` extension set to "/dav/" (as Axum would set it). The handler
+/// reads `OriginalUri` to build its hrefs, so this is the exact code path that
+/// runs in production.
+#[tokio::test]
+async fn test_propfind_hrefs_include_mount_prefix() {
+    use axum::extract::OriginalUri;
+    use tower::ServiceExt;
+
+    let db = seeded_db().await;
+    let router = test_router(db);
+
+    // Build a PROPFIND request that mimics what Axum delivers after stripping
+    // "/dav" from "/dav/":  uri = "/", but OriginalUri extension = "/dav/".
+    let mut req = http::Request::builder()
+        .method("PROPFIND")
+        .uri("/")
+        .header("depth", "1")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    req.extensions_mut()
+        .insert(OriginalUri("/dav/".parse::<http::Uri>().unwrap()));
+
+    let response = router.clone().oneshot(req).await.unwrap();
+    let status = response.status();
+    let body_bytes = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+
+    assert_eq!(status, StatusCode::MULTI_STATUS);
+
+    let xml = String::from_utf8(body_bytes).unwrap();
+
+    // All three hrefs must carry the /dav prefix sourced from OriginalUri.
+    assert!(
+        xml.contains("<D:href>/dav/</D:href>"),
+        "root href must include /dav prefix; got:\n{xml}"
+    );
+    assert!(
+        xml.contains("<D:href>/dav/nzbs/</D:href>"),
+        "/nzbs/ href must include /dav prefix; got:\n{xml}"
+    );
+    assert!(
+        xml.contains("<D:href>/dav/content/</D:href>"),
+        "/content/ href must include /dav prefix; got:\n{xml}"
+    );
+
+    // Sanity: no path traversal artifacts from prefix stripping.
+    assert!(
+        !xml.contains("/../"),
+        "hrefs must not contain path traversal; got:\n{xml}"
+    );
+}

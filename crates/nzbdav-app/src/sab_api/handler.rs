@@ -993,4 +993,175 @@ mod tests {
         assert_eq!(v["status"], false);
         assert!(v["error"].as_str().unwrap().contains("not found"));
     }
+
+    // -----------------------------------------------------------------------
+    // enqueue_nzb: job_name is derived from the filename passed in (Bug #3 /
+    // nzbname regression)
+    // -----------------------------------------------------------------------
+
+    fn minimal_nzb() -> &'static [u8] {
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">
+  <file poster="test@example.com" date="1234567890" subject="test.rar (1/1)">
+    <groups><group>alt.binaries.test</group></groups>
+    <segments>
+      <segment number="1" bytes="768000">article1@example.com</segment>
+    </segments>
+  </file>
+</nzb>"#
+    }
+
+    /// `enqueue_nzb` must store the job_name as the filename stem (minus .nzb).
+    /// In production, `handle_addurl` resolves this to the `nzbname` param value
+    /// before calling `enqueue_nzb`, so testing `enqueue_nzb` directly proves
+    /// that whatever filename is passed becomes the job_name.
+    #[tokio::test]
+    async fn test_enqueue_nzb_stores_job_name_from_filename() {
+        let state = test_state().await;
+        let result = enqueue_nzb(
+            state.clone(),
+            "My.Cool.Movie.nzb",
+            minimal_nzb(),
+            "movies",
+            0,
+            None,
+        );
+        let v: serde_json::Value = result.0;
+        assert!(
+            v["status"].as_bool().unwrap_or(false),
+            "enqueue_nzb should succeed; got: {v}"
+        );
+        let nzo_id = v["nzo_ids"][0]
+            .as_str()
+            .expect("nzo_ids[0] must be a string");
+        assert!(!nzo_id.is_empty(), "nzo_id must not be empty");
+
+        // Verify job_name in the DB matches the filename stem.
+        let conn = state.db.lock();
+        let items = nzbdav_core::queue_items::list_paginated(&conn, 0, 10).unwrap();
+        assert_eq!(items.len(), 1, "exactly one queue item should be inserted");
+        assert_eq!(
+            items[0].job_name, "My.Cool.Movie",
+            "job_name must be the filename stem without .nzb"
+        );
+        assert_eq!(
+            items[0].id.to_string(),
+            nzo_id,
+            "nzo_id in the JSON response must match the queue item UUID (regression for Bug #1)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // history nzo_ids filter (Bug #2 regression)
+    // -----------------------------------------------------------------------
+
+    fn make_history_item_for(id: Uuid, name: &str) -> nzbdav_core::models::HistoryItem {
+        use nzbdav_core::models::DownloadStatus;
+        nzbdav_core::models::HistoryItem {
+            id,
+            created_at: chrono::Utc::now().naive_utc(),
+            file_name: format!("{name}.nzb"),
+            job_name: name.to_string(),
+            category: "movies".to_string(),
+            download_status: DownloadStatus::Completed,
+            total_segment_bytes: 1024,
+            download_time_seconds: 10,
+            fail_message: None,
+            download_dir_id: None,
+            nzb_blob_id: None,
+        }
+    }
+
+    /// When `nzo_ids` is supplied, only the matching history item must be
+    /// returned — regardless of total history size. This is how AIOStreams
+    /// polls for download completion.
+    #[tokio::test]
+    async fn test_history_nzo_ids_filter_returns_only_matching() {
+        let state = test_state().await;
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        {
+            let conn = state.db.lock();
+            nzbdav_core::history_items::insert(&conn, &make_history_item_for(id1, "Job One"))
+                .unwrap();
+            nzbdav_core::history_items::insert(&conn, &make_history_item_for(id2, "Job Two"))
+                .unwrap();
+        }
+
+        // Ask for only id1.
+        let app = Router::new()
+            .route("/api", get(sab_api).post(sab_api))
+            .with_state(state.clone());
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api?mode=history&nzo_ids={id1}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        let slots = v["history"]["slots"].as_array().unwrap();
+        assert_eq!(slots.len(), 1, "only one slot should be returned");
+        assert_eq!(
+            slots[0]["nzo_id"].as_str().unwrap(),
+            id1.to_string(),
+            "returned slot must be the requested id"
+        );
+        assert_eq!(
+            slots[0]["name"].as_str().unwrap(),
+            "Job One",
+            "returned slot must be Job One"
+        );
+    }
+
+    /// Regression test for Bug #1: after `move_to_history()`, the history item
+    /// UUID must equal the original queue item UUID so that AIOStreams can find
+    /// it by polling with the nzo_id it received at addurl time.
+    #[tokio::test]
+    async fn test_history_item_id_matches_queue_item_id() {
+        let state = test_state().await;
+        let queue_id = Uuid::new_v4();
+
+        // Simulate what queue_manager does after download: insert the history
+        // item with the SAME id as the queue item.
+        {
+            let conn = state.db.lock();
+            nzbdav_core::history_items::insert(
+                &conn,
+                &make_history_item_for(queue_id, "Downloaded.Movie"),
+            )
+            .unwrap();
+        }
+
+        // AIOStreams polls history with the id it got from addurl.
+        let app = Router::new()
+            .route("/api", get(sab_api).post(sab_api))
+            .with_state(state.clone());
+        let resp = app
+            .oneshot(
+                Request::get(format!("/api?mode=history&nzo_ids={queue_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        let slots = v["history"]["slots"].as_array().unwrap();
+        assert_eq!(
+            slots.len(),
+            1,
+            "history item must be findable by the original queue UUID"
+        );
+        assert_eq!(slots[0]["nzo_id"].as_str().unwrap(), queue_id.to_string());
+    }
 }
