@@ -36,6 +36,8 @@ pub struct ApiParams {
     pub nzbname: Option<String>,
     /// Comma-separated nzo_ids to filter history results (AIOStreams polling).
     pub nzo_ids: Option<String>,
+    /// Category filter for history (Usenet-Ultimate sends `category=`, others send `cat=`).
+    pub category: Option<String>,
     /// Sonarr sends del_files=1 on delete; accepted and ignored.
     #[allow(dead_code)]
     pub del_files: Option<i32>,
@@ -157,12 +159,14 @@ async fn handle_addfile(
     };
 
     // Extract the NZB file from multipart fields.
+    // Accept "nzbfile" (SABnzbd standard, UsenetStreamer) and "nzbFile" (Usenet-Ultimate)
+    // using case-insensitive matching. Also accept "name" for older clients.
     let mut nzb_data: Option<Vec<u8>> = None;
     let mut nzb_filename: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         let field_name = field.name().unwrap_or("").to_string();
-        if field_name == "nzbfile" || field_name == "name" {
+        if field_name.eq_ignore_ascii_case("nzbfile") || field_name == "name" {
             nzb_filename = field.file_name().map(|s| s.to_string());
             match field.bytes().await {
                 Ok(bytes) => nzb_data = Some(bytes.to_vec()),
@@ -191,7 +195,19 @@ async fn handle_addfile(
         );
     };
 
-    let filename = nzb_filename.unwrap_or_else(|| "unknown.nzb".to_string());
+    // Prefer nzbname (job label from client) over the multipart filename, matching
+    // addurl behaviour. Usenet-Ultimate and UsenetStreamer both send nzbname so that
+    // the WebDAV folder name is predictable for deduplication.
+    let filename = match params.nzbname.filter(|s| !s.is_empty()) {
+        Some(name) => {
+            if name.ends_with(".nzb") {
+                name
+            } else {
+                format!("{name}.nzb")
+            }
+        }
+        None => nzb_filename.unwrap_or_else(|| "unknown.nzb".to_string()),
+    };
     let category = params.cat.unwrap_or_default();
     let priority = params.priority.unwrap_or(0);
 
@@ -589,8 +605,16 @@ fn handle_history(state: AppState, params: ApiParams) -> Json<serde_json::Value>
         (items, total)
     };
 
+    // `category` (Usenet-Ultimate) and `cat` (SABnzbd standard) both filter history.
+    let cat_filter: Option<String> = params.category.or(params.cat).map(|s| s.to_lowercase());
+
     let slots: Vec<HistorySlot> = items
         .iter()
+        .filter(|item| {
+            cat_filter
+                .as_ref()
+                .is_none_or(|f| item.category.eq_ignore_ascii_case(f))
+        })
         .map(|item| {
             let status = match item.download_status {
                 DownloadStatus::Completed => "Completed",
@@ -1163,5 +1187,145 @@ mod tests {
             "history item must be findable by the original queue UUID"
         );
         assert_eq!(slots[0]["nzo_id"].as_str().unwrap(), queue_id.to_string());
+    }
+
+    // -----------------------------------------------------------------------
+    // addfile field-name compatibility (issue #2 regression)
+    // -----------------------------------------------------------------------
+
+    fn multipart_body(field_name: &str, filename: &str, data: &[u8]) -> (String, Vec<u8>) {
+        let boundary = "testboundary123";
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\nContent-Type: application/x-nzb+xml\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(data);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        (format!("multipart/form-data; boundary={boundary}"), body)
+    }
+
+    async fn post_addfile(uri: &str, field_name: &str, filename: &str) -> serde_json::Value {
+        let app = test_router().await;
+        let (ct, body) = multipart_body(field_name, filename, minimal_nzb());
+        let resp = app
+            .oneshot(
+                Request::post(uri)
+                    .header("content-type", ct)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// Usenet-Ultimate sends field name `nzbFile` (capital F). Must be accepted.
+    #[tokio::test]
+    async fn test_addfile_nzbFile_field_name_accepted() {
+        let v = post_addfile("/api?mode=addfile&cat=movies", "nzbFile", "Test.Movie.nzb").await;
+        assert!(
+            v["status"].as_bool().unwrap_or(false),
+            "addfile with nzbFile field must succeed; got: {v}"
+        );
+        assert!(
+            !v["nzo_ids"][0].as_str().unwrap_or("").is_empty(),
+            "nzo_ids must contain the new job UUID"
+        );
+    }
+
+    /// Standard lowercase field name must still work (UsenetStreamer).
+    #[tokio::test]
+    async fn test_addfile_lowercase_nzbfile_field_accepted() {
+        let v = post_addfile("/api?mode=addfile&cat=movies", "nzbfile", "Test.Movie.nzb").await;
+        assert!(
+            v["status"].as_bool().unwrap_or(false),
+            "addfile with nzbfile field must succeed; got: {v}"
+        );
+    }
+
+    /// When `nzbname` is provided it must override the multipart filename as the job name.
+    #[tokio::test]
+    async fn test_addfile_nzbname_overrides_multipart_filename() {
+        let state = test_state().await;
+        let (ct, body) = multipart_body("nzbFile", "raw_upload.nzb", minimal_nzb());
+        let app = Router::new()
+            .route("/api", get(sab_api).post(sab_api))
+            .route("/api/history/{id}/retry", post(rest_retry_history))
+            .with_state(state.clone());
+        let resp = app
+            .oneshot(
+                Request::post("/api?mode=addfile&cat=movies&nzbname=UsenetUltimate-Test")
+                    .header("content-type", ct)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            v["status"].as_bool().unwrap_or(false),
+            "addfile with nzbname must succeed; got: {v}"
+        );
+        let conn = state.db.lock();
+        let items = nzbdav_core::queue_items::list_paginated(&conn, 0, 10).unwrap();
+        assert_eq!(
+            items[0].job_name, "UsenetUltimate-Test",
+            "job_name must come from nzbname, not the multipart filename"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // history category filter (issue #2 regression)
+    // -----------------------------------------------------------------------
+
+    /// `category=` param (Usenet-Ultimate style) must filter history to that category.
+    #[tokio::test]
+    async fn test_history_category_filter() {
+        let state = test_state().await;
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        {
+            let conn = state.db.lock();
+            let mut movie = make_history_item_for(id1, "Movie");
+            movie.category = "movies".to_string();
+            let mut show = make_history_item_for(id2, "Show");
+            show.category = "tv".to_string();
+            nzbdav_core::history_items::insert(&conn, &movie).unwrap();
+            nzbdav_core::history_items::insert(&conn, &show).unwrap();
+        }
+
+        let app = Router::new()
+            .route("/api", get(sab_api).post(sab_api))
+            .route("/api/history/{id}/retry", post(rest_retry_history))
+            .with_state(state);
+
+        let resp = app
+            .oneshot(
+                Request::get("/api?mode=history&category=movies")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let slots = v["history"]["slots"].as_array().unwrap();
+        assert_eq!(slots.len(), 1, "category=movies must return only 1 slot");
+        assert_eq!(
+            slots[0]["category"].as_str().unwrap(),
+            "movies",
+            "returned slot must be the movies item"
+        );
     }
 }

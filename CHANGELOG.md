@@ -4,6 +4,56 @@ All notable changes to nzbdav-rs are documented here.
 
 ---
 
+## [Unreleased] — Usenet-Ultimate / UsenetStreamer compatibility
+
+Resolves all known incompatibilities with [Usenet-Ultimate](https://github.com/DSmart33/Usenet-Ultimate)
+and [UsenetStreamer](https://github.com/Sanket9225/UsenetStreamer) (issue #2).
+
+### Fixed
+
+#### `addfile` rejects `nzbFile` field name (critical — NZB upload silently ignored)
+
+Usenet-Ultimate posts multipart uploads with field name `nzbFile` (capital F).
+nzbdav-rs only accepted `nzbfile` and `name`, so the NZB data was never found.
+The handler returned `{"status":false,"error":"no NZB file found in upload"}` with
+HTTP 200 — which both clients treated as success, leaving the queue empty.
+
+**Fix:** field name matching is now case-insensitive (`eq_ignore_ascii_case`).
+
+#### `addfile` ignores `nzbname` parameter (major — deduplication broken)
+
+Both clients send `nzbname=<FolderName>` on every `addfile` call for the same reason
+AIOStreams does: the folder name in the WebDAV tree must match for deduplication.
+nzbdav-rs used the multipart filename instead, so the WebDAV folder never matched
+and every play request re-added the NZB.
+
+**Fix:** `handle_addfile` now applies the same `nzbname`-over-filename priority
+as `handle_addurl`.
+
+#### History `category` filter not recognised (minor — category filter ignored)
+
+Usenet-Ultimate polls `mode=history&category=movies` (not `cat=movies`). The
+`category` query parameter was undeclared and silently dropped, so every history
+poll returned all categories regardless.
+
+**Fix:** `ApiParams` now includes `category: Option<String>`. `handle_history`
+merges `category` and `cat` into a single case-insensitive filter applied in Rust
+after fetching the paginated results.
+
+### Added
+
+- **4 regression tests** in `sab_api/handler.rs`:
+  - `test_addfile_nzbFile_field_name_accepted`
+  - `test_addfile_lowercase_nzbfile_field_accepted`
+  - `test_addfile_nzbname_overrides_multipart_filename`
+  - `test_history_category_filter`
+- **Debug Docker Compose** (`docker-compose.debug.yml`) — runs nzbdav-rs with
+  `NZBDAV_LOG=debug` plus an auto-running `test-runner` container
+- **Issue #2 regression test script** (`e2e-setup/test-issue2.sh`) — fires the
+  exact curl requests Usenet-Ultimate and UsenetStreamer make, with pass/fail output
+
+---
+
 ## [0.5.2] — AIOStreams compatibility
 
 This release resolves all known incompatibilities with

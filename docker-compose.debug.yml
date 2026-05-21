@@ -1,0 +1,37 @@
+services:
+  nzbdav:
+    image: repo.indexarr.net/indexarr/nzbdav-rs:latest
+    ports:
+      - "8080:8080"
+    environment:
+      NZBDAV_API_KEY: testkey
+      NZBDAV_WEBDAV_USER: user
+      NZBDAV_WEBDAV_PASS: pass
+      NZBDAV_LOG: debug
+    volumes:
+      - nzbdav-debug-db:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api?mode=version&apikey=testkey"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Fires the issue #2 regression tests once nzbdav is healthy, then exits.
+  test-runner:
+    image: alpine:3.21
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://nzbdav:8080
+      API_KEY: testkey
+    volumes:
+      - ./e2e-setup:/setup:ro
+    entrypoint: >
+      sh -c "
+        apk add --no-cache curl python3 bash >/dev/null 2>&1 &&
+        bash /setup/test-issue2.sh $$BASE_URL $$API_KEY
+      "
+
+volumes:
+  nzbdav-debug-db:
