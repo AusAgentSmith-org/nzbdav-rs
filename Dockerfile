@@ -6,6 +6,8 @@ WORKDIR /build
 
 # Copy workspace manifests first for dependency caching
 COPY Cargo.toml Cargo.lock ./
+# Vendored local library override (used by [patch.crates-io] in Cargo.toml)
+COPY vendor-nzb-core/ vendor-nzb-core/
 COPY crates/nzbdav-core/Cargo.toml crates/nzbdav-core/Cargo.toml
 COPY crates/nzbdav-dav/Cargo.toml crates/nzbdav-dav/Cargo.toml
 COPY crates/nzbdav-stream/Cargo.toml crates/nzbdav-stream/Cargo.toml

@@ -83,3 +83,6 @@ nzbdav-stream = { version = "0.5.3", path = "crates/nzbdav-stream", registry = "
 nzbdav-rar = { version = "0.5.3", path = "crates/nzbdav-rar", registry = "forgejo" }
 nzbdav-pipeline = { version = "0.5.3", path = "crates/nzbdav-pipeline", registry = "forgejo" }
 nzbdav-arr = { version = "0.5.3", path = "crates/nzbdav-arr", registry = "forgejo" }
+
+[patch.crates-io]
+nzb-core = { path = "vendor-nzb-core" }

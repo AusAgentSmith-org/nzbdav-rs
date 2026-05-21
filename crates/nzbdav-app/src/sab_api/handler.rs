@@ -324,7 +324,16 @@ fn enqueue_nzb(
     let nzb_job = match parse_nzb(&job_name, data) {
         Ok(job) => job,
         Err(e) => {
-            warn!(error = %e, filename = %filename, "failed to parse NZB");
+            // Log the first 300 bytes so we can see what was actually received
+            // (HTML error page, JSON, gzip, empty, etc.).
+            let snippet = String::from_utf8_lossy(&data[..data.len().min(300)]);
+            warn!(
+                error = %e,
+                filename = %filename,
+                data_len = data.len(),
+                first_bytes = %snippet,
+                "failed to parse NZB"
+            );
             return Json(
                 serde_json::to_value(SimpleResponse {
                     status: false,
