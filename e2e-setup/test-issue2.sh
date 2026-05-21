@@ -141,6 +141,39 @@ else
     echo "  (skipped — no nzo_id from step 2)"
 fi
 
+# ── 8. API key auth regression (issue #3 — dashboard 401 when key is set) ────
+# Verifies the backend auth contract that the UI now relies on:
+#   - request without key  → 401 (not 200 with JSON error)
+#   - request with key     → 200 with well-formed JSON
+# This catches any regression where auth middleware stops enforcing the key,
+# which would silently break the localStorage-based key flow in the UI.
+echo ""
+echo "── API key auth (dashboard regression, issue #3) ──"
+if [ -n "$KEY" ]; then
+    HTTP_NO_KEY=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api?mode=queue" 2>/dev/null)
+    if [ "$HTTP_NO_KEY" = "401" ]; then
+        ok "queue without apikey → 401 (auth enforced)"
+    else
+        fail "queue without apikey → HTTP $HTTP_NO_KEY (expected 401 — auth not enforced)"
+    fi
+
+    HTTP_WRONG_KEY=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api?mode=queue&apikey=wrongkey" 2>/dev/null)
+    if [ "$HTTP_WRONG_KEY" = "401" ]; then
+        ok "queue with wrong apikey → 401"
+    else
+        fail "queue with wrong apikey → HTTP $HTTP_WRONG_KEY (expected 401)"
+    fi
+
+    HTTP_WITH_KEY=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api?mode=queue&apikey=$KEY" 2>/dev/null)
+    if [ "$HTTP_WITH_KEY" = "200" ]; then
+        ok "queue with correct apikey → 200"
+    else
+        fail "queue with correct apikey → HTTP $HTTP_WITH_KEY (expected 200)"
+    fi
+else
+    echo "  (skipped — no API key configured, auth is open)"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════"
