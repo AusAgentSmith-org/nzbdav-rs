@@ -4,7 +4,7 @@ All notable changes to nzbdav-rs are documented here.
 
 ---
 
-## [Unreleased] — Usenet-Ultimate / UsenetStreamer compatibility
+## [0.5.3] — Usenet-Ultimate / UsenetStreamer compatibility
 
 Resolves all known incompatibilities with [Usenet-Ultimate](https://github.com/DSmart33/Usenet-Ultimate)
 and [UsenetStreamer](https://github.com/Sanket9225/UsenetStreamer) (issue #2).
