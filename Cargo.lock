@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-app"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1507,7 +1507,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-arr"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bincode",
  "chrono",
@@ -1527,7 +1527,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-core"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-dav"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "async-trait",
  "axum",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-pipeline"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bincode",
  "chrono",
@@ -1594,7 +1594,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-rar"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "aes",
  "cbc",
@@ -1610,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "nzbdav-stream"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "aes",
  "arc-swap",

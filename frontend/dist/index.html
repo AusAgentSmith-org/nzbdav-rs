@@ -333,6 +333,9 @@ select.form-input{cursor:pointer}
       <div class="panel" style="padding:24px">
         <h2 style="font-size:14px;margin-bottom:20px">Application Settings</h2>
         <div style="display:grid;grid-template-columns:200px 1fr;gap:14px 24px;align-items:center;max-width:600px">
+          <label class="form-label" style="margin:0">API Key</label>
+          <input class="form-input" type="password" id="cfg-apikey" placeholder="leave blank if NZBDAV_API_KEY is not set" autocomplete="off">
+
           <label class="form-label" style="margin:0">Categories</label>
           <input class="form-input" type="text" id="cfg-categories" placeholder="tv, movies, music">
 
@@ -998,6 +1001,7 @@ async function loadSettingsPage() {
   try {
     const r = await fetch('/api/settings');
     const s = await r.json();
+    $('#cfg-apikey').value = apiKey;
     $('#cfg-categories').value = s.categories || '';
     $('#cfg-blocklist').value = s.file_blocklist || '';
     $('#cfg-ensure-video').checked = s.ensure_importable_video;
@@ -1017,6 +1021,9 @@ async function loadSettingsPage() {
 }
 
 async function saveSettings() {
+  const newKey = $('#cfg-apikey').value.trim();
+  apiKey = newKey;
+  localStorage.setItem('nzbdav_apiKey', newKey);
   const body = {
     categories: $('#cfg-categories').value,
     file_blocklist: $('#cfg-blocklist').value,
@@ -1225,6 +1232,7 @@ document.addEventListener('keydown', e => {
 });
 
 // --- Init ---
+apiKey = localStorage.getItem('nzbdav_apiKey') || '';
 loadQueue();
 loadCategories();
 connectWs();

@@ -1,0 +1,95 @@
+# Test stack: nzbdav-rs + Usenet-Ultimate + UsenetStreamer
+#
+# Validates nzbdav-rs compatibility with the two streaming clients that reported
+# issue #2. The test-runner fires the same requests each client makes to confirm
+# the addfile field-name and nzbname fixes hold.
+#
+# Usage:
+#   docker compose -f docker-compose.streaming-clients.yml up -d
+#   docker compose -f docker-compose.streaming-clients.yml logs test-runner
+#
+# Endpoints after startup:
+#   nzbdav       http://localhost:8080   (SABnzbd API + WebDAV)
+#   Usenet-Ultimate  http://localhost:1337
+#   UsenetStreamer   http://localhost:7000  (admin: /testtoken/admin/)
+
+services:
+  nzbdav:
+    image: repo.indexarr.net/indexarr/nzbdav-rs:latest
+    ports:
+      - "8080:8080"
+    environment:
+      NZBDAV_API_KEY: testkey
+      NZBDAV_WEBDAV_USER: user
+      NZBDAV_WEBDAV_PASS: pass
+      NZBDAV_LOG: info
+    volumes:
+      - nzbdav-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api?mode=version&apikey=testkey"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  usenet-ultimate:
+    image: ghcr.io/dsmart33/usenet-ultimate:latest
+    container_name: usenet-ultimate
+    ports:
+      - "1337:1337"
+    environment:
+      PORT: 1337
+      NZBDAV_URL: http://nzbdav:8080
+      NZBDAV_API_KEY: testkey
+      NZBDAV_WEBDAV_URL: http://nzbdav:8080/dav
+      NZBDAV_WEBDAV_USER: user
+      NZBDAV_WEBDAV_PASS: pass
+    volumes:
+      - usenet-ultimate-config:/app/config
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  usenetstreamer:
+    image: ghcr.io/sanket9225/usenetstreamer:latest
+    container_name: usenetstreamer
+    ports:
+      - "7000:7000"
+    environment:
+      ADDON_SHARED_SECRET: testtoken
+      CONFIG_DIR: /data/config
+      NZBDAV_URL: http://nzbdav:8080
+      NZBDAV_API_KEY: testkey
+      NZBDAV_WEBDAV_URL: http://nzbdav:8080/dav
+      NZBDAV_WEBDAV_USER: user
+      NZBDAV_WEBDAV_PASS: pass
+    volumes:
+      - usenetstreamer-config:/data/config
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Fires the issue #2 regression tests once nzbdav is healthy, then exits.
+  # Validates the exact addfile request format both streaming clients send.
+  test-runner:
+    image: alpine:3.21
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://nzbdav:8080
+      API_KEY: testkey
+    volumes:
+      - ./e2e-setup:/setup:ro
+    entrypoint: >
+      sh -c "
+        apk add --no-cache curl python3 bash >/dev/null 2>&1 &&
+        bash /setup/test-issue2.sh $$BASE_URL $$API_KEY
+      "
+
+volumes:
+  nzbdav-data:
+  usenet-ultimate-config:
+  usenetstreamer-config:

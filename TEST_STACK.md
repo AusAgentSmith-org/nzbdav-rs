@@ -4,7 +4,47 @@ Docker Compose stacks for integration and E2E testing.
 
 ---
 
-## 1. Sonarr/Radarr Stack (`docker-compose.test.yml`)
+## 1. Usenet-Ultimate / UsenetStreamer Stack (`docker-compose.streaming-clients.yml`)
+
+Validates nzbdav-rs compatibility with the two streaming clients that reported
+issue #2 (`addfile` field-name case sensitivity, `nzbname` override, history
+category filter). Both services are started and configured to point at nzbdav-rs;
+a built-in test-runner fires the exact requests each client makes and prints
+pass/fail output.
+
+### Running
+
+```bash
+docker compose -f docker-compose.streaming-clients.yml up -d
+docker compose -f docker-compose.streaming-clients.yml logs test-runner
+```
+
+The `test-runner` container exits after all tests complete. Exit code 0 = all
+tests passed; non-zero = at least one failure (check the logs).
+
+### Endpoints
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| nzbdav | http://localhost:8080 | SABnzbd API + WebDAV |
+| Usenet-Ultimate | http://localhost:1337 | Streaming client UI |
+| UsenetStreamer | http://localhost:7000 | Streaming addon server |
+| UsenetStreamer admin | http://localhost:7000/testtoken/admin/ | Admin dashboard |
+
+### Manually verifying the streaming clients
+
+Both services are pre-configured to talk to nzbdav-rs via environment variables
+(`NZBDAV_URL`, `NZBDAV_API_KEY`, etc.). To confirm the connection from each:
+
+1. Open the Usenet-Ultimate UI at http://localhost:1337 and trigger any NZB
+   submission — the queue at http://localhost:8080 should gain an entry.
+2. For UsenetStreamer, open the admin dashboard at
+   http://localhost:7000/testtoken/admin/ and confirm the NZBDav status shows
+   as connected.
+
+---
+
+## 2. Sonarr/Radarr Stack (`docker-compose.test.yml`)
 
 Tests nzbdav-rs as a SABnzbd download client with rclone WebDAV mounting.
 
@@ -47,7 +87,7 @@ docker compose -f docker-compose.test.yml up -d
 
 ---
 
-## 2. AIOStreams E2E Stack (`docker-compose.e2e.yml`)
+## 3. AIOStreams E2E Stack (`docker-compose.e2e.yml`)
 
 Full end-to-end stack: nzbdav-rs + NZBHydra2 + AIOStreams + Stremio. Proves the
 entire streaming pipeline from Stremio through AIOStreams to Usenet and back.

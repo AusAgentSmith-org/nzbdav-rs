@@ -4,6 +4,24 @@ All notable changes to nzbdav-rs are documented here.
 
 ---
 
+## [0.5.5] — Fix dashboard 401 when API key is configured
+
+### Fixed
+
+#### Dashboard unusable when `NZBDAV_API_KEY` is set (critical — all UI requests return 401)
+
+The web dashboard initialised `apiKey = ''` and never populated it. Any user
+that configured an API key via `NZBDAV_API_KEY` got constant 401 responses from
+every API call in the UI (queue polling, history, upload) and a cascade of
+"Unexpected end of JSON input" console errors.
+
+**Fix:** Settings page now has an **API Key** field. The value is stored in
+`localStorage` under `nzbdav_apiKey` and loaded on every page open. Entering
+the key once persists it across refreshes. Users who don't set `NZBDAV_API_KEY`
+are unaffected — the field stays blank and no `apikey=` parameter is appended.
+
+---
+
 ## [0.5.3] — Usenet-Ultimate / UsenetStreamer compatibility
 
 Resolves all known incompatibilities with [Usenet-Ultimate](https://github.com/DSmart33/Usenet-Ultimate)
