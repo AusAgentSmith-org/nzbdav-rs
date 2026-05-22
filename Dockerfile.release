@@ -1,0 +1,19 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates curl
+
+ARG TARGETARCH
+COPY nzbdav-app-${TARGETARCH} /usr/local/bin/nzbdav-app
+RUN chmod +x /usr/local/bin/nzbdav-app
+
+RUN mkdir -p /data
+WORKDIR /data
+
+ENV NZBDAV_DB=/data/nzbdav.db
+ENV NZBDAV_HOST=0.0.0.0
+ENV NZBDAV_PORT=8080
+ENV NZBDAV_LOG=info
+
+EXPOSE 8080
+
+ENTRYPOINT ["nzbdav-app"]

@@ -61,26 +61,6 @@ steps:
       build_args_from_env:
         - CARGO_REGISTRIES_FORGEJO_TOKEN
 
-  - name: build-and-push-release
-    image: woodpeckerci/plugin-docker-buildx
-    when:
-      - event: tag
-    environment:
-      CARGO_REGISTRIES_FORGEJO_TOKEN:
-        from_secret: git_auth_token
-    settings:
-      repo: repo.indexarr.net/indexarr/nzbdav-rs
-      registry: repo.indexarr.net
-      username:
-        from_secret: git_auth_token
-      password:
-        from_secret: git_auth_token
-      tag: ["${CI_COMMIT_TAG}", latest]
-      build_args:
-        - RELEASE_OPTIMIZED=true
-      build_args_from_env:
-        - CARGO_REGISTRIES_FORGEJO_TOKEN
-
   - name: cross-build-amd64
     image: rust:1.95.0-alpine3.21
     when:
@@ -92,6 +72,7 @@ steps:
       - cargo build --release -p nzbdav-app
       - strip target/release/nzbdav-app
       - cp target/release/nzbdav-app nzbdav-app-x86_64-linux-musl
+      - cp nzbdav-app-x86_64-linux-musl nzbdav-app-amd64
 
   - name: cross-build-arm64
     image: messense/rust-musl-cross:aarch64-musl
@@ -108,6 +89,22 @@ steps:
       - cargo build --release --target aarch64-unknown-linux-musl -p nzbdav-app
       - /usr/local/musl/bin/aarch64-unknown-linux-musl-strip target/aarch64-unknown-linux-musl/release/nzbdav-app
       - cp target/aarch64-unknown-linux-musl/release/nzbdav-app nzbdav-app-aarch64-linux-musl
+      - cp nzbdav-app-aarch64-linux-musl nzbdav-app-arm64
+
+  - name: build-and-push-release
+    image: woodpeckerci/plugin-docker-buildx
+    when:
+      - event: tag
+    settings:
+      repo: repo.indexarr.net/indexarr/nzbdav-rs
+      registry: repo.indexarr.net
+      username:
+        from_secret: git_auth_token
+      password:
+        from_secret: git_auth_token
+      tag: ["${CI_COMMIT_TAG}", latest]
+      dockerfile: Dockerfile.release
+      platforms: linux/amd64,linux/arm64
 
   - name: push-ghcr
     image: quay.io/skopeo/stable
@@ -122,7 +119,7 @@ steps:
       - SRC="docker://repo.indexarr.net/indexarr/nzbdav-rs:$CI_COMMIT_TAG"
       - SRC_CREDS="--src-creds=$FORGEJO_TOKEN:$FORGEJO_TOKEN"
       - DST_CREDS="--dest-creds=AusAgentSmith:$GH_TOKEN"
-      - for tag in $CI_COMMIT_TAG latest; do skopeo copy $SRC_CREDS $DST_CREDS $SRC "docker://ghcr.io/ausagentsmith-org/nzbdav-rs:$tag"; done
+      - for tag in $CI_COMMIT_TAG latest; do skopeo copy --all $SRC_CREDS $DST_CREDS $SRC "docker://ghcr.io/ausagentsmith-org/nzbdav-rs:$tag"; done
 
   - name: github-release
     image: alpine:3.23
@@ -206,4 +203,4 @@ steps:
       - SRC="docker://repo.indexarr.net/indexarr/nzbdav-rs:$CI_COMMIT_TAG"
       - SRC_CREDS="--src-creds=$FORGEJO_TOKEN:$FORGEJO_TOKEN"
       - DST_CREDS="--dest-creds=ausagentsmith:$DOCKERHUB_TOKEN"
-      - for tag in $CI_COMMIT_TAG latest; do skopeo copy $SRC_CREDS $DST_CREDS $SRC "docker://docker.io/ausagentsmith/nzbdav-rs:$tag"; done
+      - for tag in $CI_COMMIT_TAG latest; do skopeo copy --all $SRC_CREDS $DST_CREDS $SRC "docker://docker.io/ausagentsmith/nzbdav-rs:$tag"; done
