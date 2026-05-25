@@ -141,7 +141,16 @@ steps:
         git remote add github "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" 2>/dev/null || true
         git push github "refs/tags/$TAG" --force
 
-        BODY=$(printf "## Binaries\n\n- \`nzbdav-app-x86_64-linux-musl\` — Linux x86_64 (static)\n- \`nzbdav-app-aarch64-linux-musl\` — Linux ARM64 (static)\n- \`nzbdav-app-aarch64-apple-darwin\` — macOS Apple Silicon (unsigned — run \`xattr -dr com.apple.quarantine nzbdav-app-aarch64-apple-darwin\` if blocked by Gatekeeper; uploaded separately by CI)\n\n## Docker Images\n\n- \`ghcr.io/ausagentsmith-org/nzbdav-rs:%s\`\n- \`docker.io/ausagentsmith/nzbdav-rs:%s\`\n" "$TAG" "$TAG")
+        # Auto-generate changes from git log since previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        if [ -n "$PREV_TAG" ]; then
+          CHANGES=$(git log --pretty="- %s" "$PREV_TAG"..HEAD 2>/dev/null | grep -v "^- chore\|^- ci:" | head -20)
+        else
+          CHANGES="- Initial release"
+        fi
+        [ -z "$CHANGES" ] && CHANGES="- See commit history"
+
+        BODY=$(printf "## What's Changed\n\n%s\n\n## Binaries\n\nDownload the appropriate binary for your platform:\n\n| File | Platform |\n|------|---------|\n| \`nzbdav-app-x86_64-linux-musl\` | Linux x86_64 (static) |\n| \`nzbdav-app-aarch64-linux-musl\` | Linux ARM64 (static) |\n\n## Docker Images\n\n\`\`\`\ndocker pull ghcr.io/ausagentsmith-org/nzbdav-rs:%s\ndocker pull docker.io/ausagentsmith/nzbdav-rs:%s\n\`\`\`\n" "$CHANGES" "$TAG" "$TAG")
         PAYLOAD=$(jq -n --arg tag "$TAG" --arg name "nzbdav-rs $TAG" --arg body "$BODY" \
           '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')
 
