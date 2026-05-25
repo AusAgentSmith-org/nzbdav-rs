@@ -1,0 +1,182 @@
+# Full-flow e2e: search → download → mount → stream
+#
+# Extends docker-compose.streaming-clients.yml with a real indexer (NZBHydra2),
+# real Usenet provider (configured into nzbdav at boot), and a test-runner that
+# FUSE-mounts nzbdav's WebDAV and exercises the whole pipeline end-to-end.
+#
+# Usage:
+#   cp .env.streaming-e2e.sample .env.streaming-e2e    # fill in real creds
+#   docker compose -f docker-compose.streaming-clients-e2e.yml \
+#                  --env-file .env.streaming-e2e up -d --build
+#   docker compose -f docker-compose.streaming-clients-e2e.yml \
+#                  --env-file .env.streaming-e2e logs -f test-runner
+#
+# Pass = test-runner exits 0. Default DOWNLOAD_TIMEOUT is 900s (15min).
+#
+# Endpoints after startup:
+#   nzbdav            http://localhost:8080   (SABnzbd API + WebDAV)
+#   NZBHydra2         http://localhost:5076
+#   Usenet-Ultimate   http://localhost:1337
+#   UsenetStreamer    http://localhost:7000
+
+services:
+  nzbdav:
+    build:
+      context: .
+      args:
+        CARGO_REGISTRIES_FORGEJO_TOKEN: ${CARGO_REGISTRIES_FORGEJO_TOKEN:-}
+    image: nzbdav-rs:streaming-e2e
+    ports:
+      - "8080:8080"
+    environment:
+      NZBDAV_API_KEY: ${NZBDAV_API_KEY}
+      NZBDAV_WEBDAV_USER: ${NZBDAV_WEBDAV_USER}
+      NZBDAV_WEBDAV_PASS: ${NZBDAV_WEBDAV_PASS}
+      NZBDAV_LOG: info
+    volumes:
+      - nzbdav-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api?mode=version&apikey=${NZBDAV_API_KEY}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: POST /api/servers to wire the Usenet provider into nzbdav.
+  nzbdav-configure:
+    build:
+      context: ./e2e-setup
+    image: nzbdav-rs-e2e-setup:latest
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://nzbdav:8080
+      API_KEY: ${NZBDAV_API_KEY}
+      USENET_HOST: ${USENET_HOST}
+      USENET_PORT: ${USENET_PORT}
+      USENET_SSL: ${USENET_SSL}
+      USENET_USER: ${USENET_USER}
+      USENET_PASS: ${USENET_PASS}
+      USENET_CONNECTIONS: ${USENET_CONNECTIONS}
+    entrypoint: ["bash", "/setup/nzbdav-configure.sh"]
+    restart: "no"
+
+  nzbhydra2:
+    image: lscr.io/linuxserver/nzbhydra2:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    ports:
+      - "5076:5076"
+    volumes:
+      - nzbhydra2-config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5076/internalapi/config >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot: add the Newznab indexer to NZBHydra2 via its internal API.
+  nzbhydra2-configure:
+    image: nzbdav-rs-e2e-setup:latest
+    depends_on:
+      nzbdav-configure:
+        condition: service_completed_successfully
+      nzbhydra2:
+        condition: service_healthy
+    environment:
+      HYDRA_URL: http://nzbhydra2:5076
+      INDEXER_NAME: ${INDEXER_NAME}
+      INDEXER_URL: ${INDEXER_URL}
+      INDEXER_API_KEY: ${INDEXER_API_KEY}
+    entrypoint: ["bash", "/setup/nzbhydra2-configure.sh"]
+    restart: "no"
+
+  usenet-ultimate:
+    image: ghcr.io/dsmart33/usenet-ultimate:latest
+    container_name: usenet-ultimate
+    ports:
+      - "1337:1337"
+    environment:
+      PORT: 1337
+      NZBDAV_URL: http://nzbdav:8080
+      NZBDAV_API_KEY: ${NZBDAV_API_KEY}
+      NZBDAV_WEBDAV_URL: http://nzbdav:8080/dav
+      NZBDAV_WEBDAV_USER: ${NZBDAV_WEBDAV_USER}
+      NZBDAV_WEBDAV_PASS: ${NZBDAV_WEBDAV_PASS}
+    volumes:
+      - usenet-ultimate-config:/app/config
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+      nzbhydra2:
+        condition: service_healthy
+    restart: unless-stopped
+
+  usenetstreamer:
+    image: ghcr.io/sanket9225/usenetstreamer:latest
+    container_name: usenetstreamer
+    ports:
+      - "7000:7000"
+    environment:
+      ADDON_SHARED_SECRET: ${STREAMER_SHARED_SECRET}
+      CONFIG_DIR: /data/config
+      NZBDAV_URL: http://nzbdav:8080
+      NZBDAV_API_KEY: ${NZBDAV_API_KEY}
+      NZBDAV_WEBDAV_URL: http://nzbdav:8080/dav
+      NZBDAV_WEBDAV_USER: ${NZBDAV_WEBDAV_USER}
+      NZBDAV_WEBDAV_PASS: ${NZBDAV_WEBDAV_PASS}
+    volumes:
+      - usenetstreamer-config:/data/config
+    depends_on:
+      nzbdav:
+        condition: service_healthy
+      nzbhydra2:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The full e2e: rclone-mounts nzbdav's WebDAV at /mnt/nzbdav inside its own
+  # filesystem, then runs the test script. FUSE is local to this container.
+  # Needs SYS_ADMIN + /dev/fuse for the mount.
+  test-runner:
+    image: nzbdav-rs-e2e-setup:latest
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    depends_on:
+      nzbdav-configure:
+        condition: service_completed_successfully
+      # nzbhydra2-configure intentionally omitted — adding the indexer to Hydra
+      # while still rate-limited by omg triggers its periodic IndexerChecker which
+      # keeps re-attempting and extending the lockout. Test searches direct
+      # against INDEXER_URL instead; Hydra is along for compat coverage only.
+      usenet-ultimate:
+        condition: service_started
+      usenetstreamer:
+        condition: service_started
+    environment:
+      NZBDAV_URL: http://nzbdav:8080
+      NZBDAV_API_KEY: ${NZBDAV_API_KEY}
+      NZBDAV_WEBDAV_USER: ${NZBDAV_WEBDAV_USER}
+      NZBDAV_WEBDAV_PASS: ${NZBDAV_WEBDAV_PASS}
+      HYDRA_URL: http://nzbhydra2:5076
+      INDEXER_URL: ${INDEXER_URL}
+      INDEXER_API_KEY: ${INDEXER_API_KEY}
+      ULTIMATE_URL: http://usenet-ultimate:1337
+      STREAMER_URL: http://usenetstreamer:7000
+      STREAMER_SHARED_SECRET: ${STREAMER_SHARED_SECRET}
+      SEARCH_LIMIT: ${SEARCH_LIMIT}
+      DOWNLOAD_TIMEOUT: ${DOWNLOAD_TIMEOUT}
+    entrypoint: ["bash", "/setup/test-streaming-e2e.sh"]
+
+volumes:
+  nzbdav-data:
+  nzbhydra2-config:
+  usenet-ultimate-config:
+  usenetstreamer-config:

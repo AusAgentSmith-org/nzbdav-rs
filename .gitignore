@@ -5,3 +5,5 @@
 .cargo_token
 /frontend/mockups/
 .codesight/
+.env.streaming-e2e
+.env.e2e

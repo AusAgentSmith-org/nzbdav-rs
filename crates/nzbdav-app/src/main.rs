@@ -111,15 +111,20 @@ async fn main() -> anyhow::Result<()> {
         status_broadcaster::run_status_broadcaster(qm_status_rx, ws_tx, broadcaster_cancel).await;
     });
 
-    // 9. Build router (pass log_buffer for the /api/logs endpoint)
-    let app = build_router(app_state, dav_store, ws_tx_for_route, log_buffer, &cli);
+    // 9. Build router (pass log_buffer for the /api/logs endpoint).
+    // Wrap with NormalizePath at the Tower service level (outside Axum routing) so
+    // that trailing-slash paths like /dav/ are normalised to /dav before the router
+    // sees them — Axum's nest("/dav", …) does not match the trailing-slash variant
+    // because matchit's catch-all wildcard requires a non-empty remainder.
+    let router = build_router(app_state, dav_store, ws_tx_for_route, log_buffer, &cli);
+    let app = tower_http::normalize_path::NormalizePath::trim_trailing_slash(router);
 
     // 10. Start server
     let addr = format!("{}:{}", cli.host, cli.port);
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("Listening on {addr}");
 
-    axum::serve(listener, app)
+    axum::serve(listener, tower::make::Shared::new(app))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
@@ -261,12 +266,14 @@ fn build_router(
         .merge(debug_routes.with_state(state.clone()))
         .merge(logs)
         .merge(ws_route)
-        // SABnzbd API also reachable at /dav/api so AIOStreams can use nzbdavUrl=http://host/dav
+        // SABnzbd API also reachable at /dav/api so AIOStreams can use nzbdavUrl=http://host/dav.
+        // WebDAV handler must be the fallback (not merged) so its catch-all for non-standard
+        // HTTP methods (PROPFIND, MKCOL, MOVE, etc.) is not swallowed by merge's fallback-drop.
         .nest(
             "/dav",
             Router::new()
                 .merge(sab_dav_alias.with_state(state.clone()))
-                .merge(dav),
+                .fallback_service(dav),
         )
         .route("/", get(frontend::frontend_index))
         .fallback(get(frontend::frontend_fallback))

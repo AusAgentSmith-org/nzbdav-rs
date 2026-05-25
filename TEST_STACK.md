@@ -87,7 +87,82 @@ docker compose -f docker-compose.test.yml up -d
 
 ---
 
-## 3. AIOStreams E2E Stack (`docker-compose.e2e.yml`)
+## 3. Full Streaming-Clients E2E (`docker-compose.streaming-clients-e2e.yml`)
+
+Extends stack #1 with a real indexer (NZBHydra2) and a real Usenet provider so
+the test actually exercises **search → download → mount → stream** end-to-end.
+
+```
+NZBHydra2  ←  test-runner (search)
+   │
+   ▼          (addurl)
+ nzbdav-rs  ←──────────────  test-runner
+   │                              │
+   ├─ NNTP → Usenet provider      │ (poll mode=history)
+   │                              │
+   ▼                              ▼
+ /dav/content/{cat}/{nzbname}  ←  rclone FUSE mount inside test-runner
+                               ↓
+                         range-GET first bytes
+```
+
+### Setup
+
+```bash
+cp .env.streaming-e2e.sample .env.streaming-e2e
+# Fill in USENET_*, INDEXER_*, NZBDAV_* (the file is gitignored)
+```
+
+### Running
+
+```bash
+docker compose -f docker-compose.streaming-clients-e2e.yml \
+               --env-file .env.streaming-e2e up -d --build
+
+docker compose -f docker-compose.streaming-clients-e2e.yml \
+               --env-file .env.streaming-e2e logs -f test-runner
+```
+
+The test-runner blocks on the two configure jobs (`nzbdav-configure`,
+`nzbhydra2-configure`) completing successfully, then runs the five-step script
+(`e2e-setup/test-streaming-e2e.sh`). Exit code 0 = all steps green.
+
+### What each step asserts
+
+| Step | Assertion | Failure mode |
+|------|-----------|--------------|
+| 0. Prereqs | nzbdav version, NZBHydra2 apiKey, ≥1 provider in nzbdav | Misconfigured stack |
+| 1. Search | NZBHydra2 returns `SEARCH_LIMIT` recent items (empty query) | Indexer creds wrong |
+| 2. Connectivity | Usenet-Ultimate `/` + UsenetStreamer `/$SECRET/manifest.json` reachable | Streaming client crashed |
+| 3. Download | `addurl` returns `nzo_id`; history slot reaches `status=Completed` within `DOWNLOAD_TIMEOUT` | NNTP failure or article missing |
+| 4. Mount | `rclone mount nzbdav:/` succeeds; `ls /mnt/nzbdav` lists ≥1 entry; downloaded file is locatable via the mount | WebDAV listing broken |
+| 5. Stream | WebDAV range-GET returns 206/200; first bytes via WebDAV equal first bytes via the FUSE mount | Streaming path broken |
+
+### Tunables (in `.env.streaming-e2e`)
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `SEARCH_LIMIT` | 5 | How many results to pull in step 1 |
+| `DOWNLOAD_TIMEOUT` | 900 | Cap (seconds) on step 3. 900 = 15 min "patient" |
+| `STREAMER_SHARED_SECRET` | testtoken | UsenetStreamer addon token (matches the existing stack) |
+
+### Endpoints
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| nzbdav | http://localhost:8080 | SABnzbd API + WebDAV |
+| NZBHydra2 | http://localhost:5076 | Newznab proxy / search |
+| Usenet-Ultimate | http://localhost:1337 | Streaming client UI |
+| UsenetStreamer | http://localhost:7000 | Streaming addon server |
+
+The test-runner FUSE-mounts WebDAV inside its own container — there is no host
+mount point. To inspect the mount manually: `docker compose -f
+docker-compose.streaming-clients-e2e.yml exec test-runner ls /mnt/nzbdav`
+(only useful while the test-runner is still alive, i.e. paused mid-run).
+
+---
+
+## 4. AIOStreams E2E Stack (`docker-compose.e2e.yml`)
 
 Full end-to-end stack: nzbdav-rs + NZBHydra2 + AIOStreams + Stremio. Proves the
 entire streaming pipeline from Stremio through AIOStreams to Usenet and back.
