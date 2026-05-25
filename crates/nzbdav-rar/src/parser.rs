@@ -32,8 +32,10 @@ pub fn parse_headers<R: Read + Seek>(
 
 /// Parse a RAR archive and return all headers (archive, file, service, end).
 ///
-/// For password-protected RAR5 archives with encrypted headers, pass the
-/// password to decrypt the header block. RAR4 ignores the password parameter.
+/// For password-protected RAR5 archives with encrypted headers, the password
+/// is used to derive the AES-256 key and decrypt the header block. For RAR4
+/// archives with encrypted headers (`MHD_PASSWORD` flag), `EncryptedHeaders`
+/// is returned — RAR4 header decryption is not yet implemented.
 pub fn parse_all_headers<R: Read + Seek>(
     reader: &mut R,
     password: Option<&str>,
@@ -49,7 +51,7 @@ pub fn parse_all_headers<R: Read + Seek>(
 
     match version {
         RarVersion::Rar5 => crate::rar5::parse_rar5(reader, password),
-        RarVersion::Rar4 => crate::rar4::parse_rar4(reader),
+        RarVersion::Rar4 => crate::rar4::parse_rar4(reader, password),
     }
 }
 
@@ -99,5 +101,27 @@ mod tests {
         let mut cursor = Cursor::new(&data[..]);
         let result = parse_all_headers(&mut cursor, None);
         assert!(matches!(result, Err(RarError::SignatureNotFound)));
+    }
+
+    #[test]
+    fn rar4_encrypted_headers_returns_encrypted_headers_error() {
+        let data = crate::rar4::tests_helper::build_rar4_with_encrypted_headers();
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_all_headers(&mut cursor, None);
+        assert!(
+            matches!(result, Err(RarError::EncryptedHeaders)),
+            "expected EncryptedHeaders, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn rar4_encrypted_headers_with_password_still_errors() {
+        let data = crate::rar4::tests_helper::build_rar4_with_encrypted_headers();
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_all_headers(&mut cursor, Some("secret"));
+        assert!(
+            matches!(result, Err(RarError::EncryptedHeaders)),
+            "expected EncryptedHeaders, got: {result:?}"
+        );
     }
 }

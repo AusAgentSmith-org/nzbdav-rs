@@ -164,6 +164,14 @@ pub fn parse_rar5<R: Read + Seek>(
                 // (CRC + header_size + type + ...) without magic.
                 let mut dec_cursor = std::io::Cursor::new(decrypted);
                 let decrypted_headers = parse_rar5_headers_from_data(&mut dec_cursor)?;
+
+                // An empty result means every header had a CRC mismatch — the
+                // decryption key was wrong. A correctly decrypted block always
+                // contains at least one valid header (e.g. the archive header).
+                if decrypted_headers.is_empty() {
+                    return Err(RarError::IncorrectPassword);
+                }
+
                 headers.extend(decrypted_headers);
 
                 // All remaining headers have been parsed from the decrypted block
@@ -336,7 +344,18 @@ fn parse_rar5_headers_from_data<R: Read + Seek>(reader: &mut R) -> Result<Vec<Ra
         let remaining_header = total_header_bytes.saturating_sub(consumed_from_crc_start);
 
         let mut remaining_buf = vec![0u8; remaining_header as usize];
-        reader.read_exact(&mut remaining_buf)?;
+        match reader.read_exact(&mut remaining_buf) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                // Decrypted buffer exhausted mid-header — garbage key or truncated data.
+                tracing::debug!(
+                    "unexpected EOF in decrypted block at offset {} — stopping",
+                    header_start
+                );
+                break;
+            }
+            Err(e) => return Err(RarError::Io(e)),
+        }
 
         // Verify CRC32 over the header
         {
@@ -542,6 +561,44 @@ fn parse_rar5_file_header<R: Read + Seek>(
 #[doc(hidden)]
 pub mod tests_helper {
     use crate::RAR5_MAGIC;
+
+    /// Build a RAR5 archive whose headers are "encrypted" (type 4 encryption
+    /// header present) but whose payload is random garbage.  Parsing with any
+    /// password and no password-check value will produce a wrong-key decryption,
+    /// yielding CRC failures on every header and thus an empty header list.
+    ///
+    /// `lg2_count` controls KDF work: use 0 or 1 in tests for speed.
+    pub fn build_rar5_with_garbage_encrypted_payload(lg2_count: u8) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(RAR5_MAGIC);
+
+        // Encryption header (type 4): no password-check value so key derivation
+        // always "succeeds" regardless of the password supplied.
+        let mut inner = vec![
+            4u8,       // header type = encryption
+            0u8,       // header flags = 0 (no extra area, no data area)
+            0u8,       // encryption version = 0
+            0u8,       // encryption flags = 0 (no psw_check)
+            lg2_count, // lg2_count
+        ];
+        inner.extend_from_slice(&[0u8; 16]); // salt (16 zero bytes)
+
+        let header_size_val = inner.len();
+        assert!(header_size_val < 128);
+        let size_vint = vec![header_size_val as u8];
+        let mut header_data = Vec::new();
+        header_data.extend_from_slice(&size_vint);
+        header_data.extend_from_slice(&inner);
+        let crc = crc32fast::hash(&header_data);
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&header_data);
+
+        // "Encrypted" payload: 16-byte IV + 32-byte garbage ciphertext.
+        // Decrypting this with a wrong (or any) key produces garbage that will
+        // not parse as valid RAR5 headers.
+        out.extend_from_slice(&[0x42u8; 48]);
+        out
+    }
 
     /// Build a minimal RAR5 archive with store compression (method 0).
     pub fn build_minimal_rar5_store() -> Vec<u8> {
@@ -822,5 +879,32 @@ mod tests {
         let mut cursor = Cursor::new(&data[..]);
         let result = parse_rar5(&mut cursor, None);
         assert!(matches!(result, Err(RarError::InvalidHeaderCrc(_))));
+    }
+
+    #[test]
+    fn wrong_password_no_psw_check_returns_incorrect_password() {
+        // When the archive has no password-check value, key derivation always
+        // "succeeds" regardless of the password.  The garbage decrypted output
+        // must be recognised as wrong-key and surface IncorrectPassword rather
+        // than silently returning an empty file list.
+        let data = tests_helper::build_rar5_with_garbage_encrypted_payload(1);
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_rar5(&mut cursor, Some("any_password"));
+        assert!(
+            matches!(result, Err(RarError::IncorrectPassword)),
+            "expected IncorrectPassword, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_password_no_psw_check_no_password_returns_encrypted_headers() {
+        // Without a password the EncryptedHeaders error fires before decryption.
+        let data = tests_helper::build_rar5_with_garbage_encrypted_payload(1);
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_rar5(&mut cursor, None);
+        assert!(
+            matches!(result, Err(RarError::EncryptedHeaders)),
+            "expected EncryptedHeaders, got: {result:?}"
+        );
     }
 }

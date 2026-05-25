@@ -17,6 +17,9 @@ const RAR4_END_ARCHIVE: u8 = 0x7B;
 /// Flags common to all RAR4 headers.
 const RAR4_LONG_BLOCK: u16 = 0x8000;
 
+/// Archive header flag: all blocks after the archive header are AES-encrypted.
+const MHD_PASSWORD: u16 = 0x0080;
+
 /// Read a 2-byte little-endian u16.
 fn read_u16_le<R: Read>(reader: &mut R) -> Result<u16> {
     let mut buf = [0u8; 2];
@@ -32,7 +35,15 @@ fn read_u32_le<R: Read>(reader: &mut R) -> Result<u32> {
 }
 
 /// Parse all headers from a RAR4 archive.
-pub fn parse_rar4<R: Read + Seek>(reader: &mut R) -> Result<Vec<RarHeader>> {
+///
+/// If the archive has encrypted headers (`MHD_PASSWORD` flag on the archive
+/// header), returns `RarError::EncryptedHeaders`. RAR4 header-encryption
+/// decryption is not yet implemented; the `password` parameter is accepted
+/// for API symmetry with the RAR5 path and for diagnostic logging.
+pub fn parse_rar4<R: Read + Seek>(
+    reader: &mut R,
+    password: Option<&str>,
+) -> Result<Vec<RarHeader>> {
     // Read and verify magic
     let mut magic = [0u8; 7];
     reader.read_exact(&mut magic)?;
@@ -81,6 +92,13 @@ pub fn parse_rar4<R: Read + Seek>(reader: &mut R) -> Result<Vec<RarHeader>> {
                 // Archive header body: reserved1(2) + reserved2(4) = 6 bytes
                 let is_volume = flags & 0x0001 != 0;
                 let is_first_volume = flags & 0x0100 != 0;
+                if flags & MHD_PASSWORD != 0 {
+                    tracing::warn!(
+                        has_password = password.is_some(),
+                        "RAR4 archive has encrypted headers — decryption not yet supported"
+                    );
+                    return Err(RarError::EncryptedHeaders);
+                }
                 headers.push(RarHeader::Archive(ArchiveHeader {
                     is_first_volume: !is_volume || is_first_volume,
                     volume_number: None,
@@ -206,6 +224,41 @@ fn parse_rar4_file_header(
     })
 }
 
+/// Test helper functions for building synthetic RAR4 archives.
+/// Exposed for use by other module tests (e.g., parser).
+#[doc(hidden)]
+pub mod tests_helper {
+    use super::{MHD_PASSWORD, RAR4_ARCHIVE};
+    use crate::RAR4_MAGIC;
+
+    /// Build a minimal RAR4 archive with the `MHD_PASSWORD` flag set on the
+    /// archive header. Bytes after the archive header are garbage (simulating
+    /// encrypted content).
+    pub fn build_rar4_with_encrypted_headers() -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(RAR4_MAGIC);
+
+        let header_type: u8 = RAR4_ARCHIVE;
+        let flags: u16 = MHD_PASSWORD;
+        let size: u16 = 13; // 7 base + 6 body
+        let body: [u8; 6] = [0; 6];
+
+        let mut crc_data = Vec::new();
+        crc_data.push(header_type);
+        crc_data.extend_from_slice(&flags.to_le_bytes());
+        crc_data.extend_from_slice(&size.to_le_bytes());
+        crc_data.extend_from_slice(&body);
+
+        let crc = crc32fast::hash(&crc_data) as u16;
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&crc_data);
+
+        // Simulated encrypted payload (garbage)
+        out.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF].repeat(4));
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,7 +356,7 @@ mod tests {
     fn parse_minimal_rar4() {
         let data = build_minimal_rar4();
         let mut cursor = Cursor::new(&data[..]);
-        let headers = parse_rar4(&mut cursor).unwrap();
+        let headers = parse_rar4(&mut cursor, None).unwrap();
 
         assert_eq!(headers.len(), 3);
 
@@ -337,5 +390,29 @@ mod tests {
             }
             other => panic!("expected EndArchive header, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_rar4_encrypted_headers_no_password_returns_encrypted_headers_error() {
+        let data = tests_helper::build_rar4_with_encrypted_headers();
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_rar4(&mut cursor, None);
+        assert!(
+            matches!(result, Err(RarError::EncryptedHeaders)),
+            "expected EncryptedHeaders, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_rar4_encrypted_headers_with_password_still_errors() {
+        // RAR4 header decryption is not yet implemented; providing a password
+        // should still surface EncryptedHeaders rather than returning garbled headers.
+        let data = tests_helper::build_rar4_with_encrypted_headers();
+        let mut cursor = Cursor::new(&data[..]);
+        let result = parse_rar4(&mut cursor, Some("password123"));
+        assert!(
+            matches!(result, Err(RarError::EncryptedHeaders)),
+            "expected EncryptedHeaders, got: {result:?}"
+        );
     }
 }
